@@ -59,46 +59,58 @@ class TrainingPlotter(Callback):
         epoch_time = time.time() - self.epoch_t0
         self.history.append(logs)
         
-        early_stop_msg = ''
-        if logs['val_loss'] < self.best_loss:
-            self.best_loss = logs['val_loss']
-            self.best_epoch = epoch
-            self.waiting = 0
-            if self.filepath is not None:
-                save_model_and_history(self.filepath, self.model, self)
+        if 'val_loss' in logs.keys():
+            early_stop_msg = ''
+            if logs['val_loss'] < self.best_loss:
+                self.best_loss = logs['val_loss']
+                self.best_epoch = epoch
+                self.waiting = 0
+                if self.filepath is not None:
+                    save_model_and_history(self.filepath, self.model, self)
+            else:
+                self.waiting += 1
+                if self.waiting > self.patience:
+                    self.model.stop_training = True
+                    early_stop_msg = 'Early Stopped.'
+            val = True
         else:
-            self.waiting += 1
-            if self.waiting > self.patience:
-                self.model.stop_training = True
-                early_stop_msg = 'Early Stopped.'
+            val = False
             
         if self.axis is None:
             self.axis = plot
 
         try:
             if (len(self.history) % self.n) == 0:
-                hvalid = np.array([v['val_loss'] for v in self.history], np.float32)
                 htrain = np.array([v['loss'] for v in self.history], np.float32)
+                if val:
+                    hvalid = np.array([v['val_loss'] for v in self.history], np.float32)
 
-                if self.line1 is None:
+                if self.line2 is None:
                     self.line2 = self.axis.plot(htrain, linewidth=2, label='training mse')[0]
-                    self.line1 = self.axis.plot(hvalid, linewidth=2, label='validation mse')[0]
-                    self.axis.vlines(self.best_epoch, 0, 1, colors='red', linestyles='dashed', 
-                                     label='validation min')
+                    if val:
+                        self.line1 = self.axis.plot(hvalid, linewidth=2, label='validation mse')[0]
+                        self.axis.vlines(self.best_epoch, 0, 1, colors='red', linestyles='dashed', 
+                                         label='validation min')
                 else:
                     self.line2.set_xdata(np.arange(htrain.shape[0]))
                     self.line2.set_ydata(htrain)
-                    self.line1.set_xdata(np.arange(hvalid.shape[0]))
-                    self.line1.set_ydata(hvalid)
-                    self.axis.vlines(self.best_epoch, 0, 1, colors='red', linestyles='dashed')
+                    if val:
+                        self.line1.set_xdata(np.arange(hvalid.shape[0]))
+                        self.line1.set_ydata(hvalid)
+                        self.axis.vlines(self.best_epoch, 0, 1, colors='red', linestyles='dashed')
                     
                 self.axis.legend()
-                acc = 100.0 * self.history[self.best_epoch]['val_acc']
-                self.axis.title('{} Best loss is {:.5f} on epoch {:d}. Accuracy = {:.2f}%'
-                                .format(early_stop_msg, self.best_loss, self.best_epoch, acc), 
-                                weight='bold')
-                self.axis.ylabel('Validation Loss [{:.5f} / {:.5f}]'.format(htrain[-1], 
-                                                                            hvalid[-1]))
+                if 'val_acc' in logs.keys():
+                    acc = ' Accuracy = {:.2f}%'.format(100.0 * self.history[self.best_epoch]['val_acc'])
+                else:
+                    acc = ''
+                if val:
+                    self.axis.title('{} Best loss is {:.5f} on epoch {:d}.{}'
+                                    .format(early_stop_msg, self.best_loss, self.best_epoch, acc), 
+                                    weight='bold')
+                    self.axis.ylabel('Losses [{:.5f} / {:.5f}]'.format(htrain[-1], hvalid[-1]))
+                else:
+                    self.axis.ylabel('Training Loss: {:.5f}'.format(htrain[-1]))
                 self.axis.xlabel('Epoch [{}: {:.2f}s]'.format(epoch, epoch_time))
                 
                 display.display(plot.gcf())
