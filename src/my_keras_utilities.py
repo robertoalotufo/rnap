@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[2]:
+# In[1]:
 
 import os, time
 import numpy as np
@@ -89,7 +89,7 @@ class TrainingPlotter(Callback):
                     self.line2 = self.axis.plot(htrain, linewidth=2, label='training mse')[0]
                     if val:
                         self.line1 = self.axis.plot(hvalid, linewidth=2, label='validation mse')[0]
-                        self.axis.vlines(self.best_epoch, 0, 1, colors='red', linestyles='dashed', 
+                        self.axis.vlines(self.best_epoch, 0, 1, colors='#EBDDE2', linestyles='dashed', 
                                          label='validation min')
                 else:
                     self.line2.set_xdata(np.arange(htrain.shape[0]))
@@ -97,7 +97,7 @@ class TrainingPlotter(Callback):
                     if val:
                         self.line1.set_xdata(np.arange(hvalid.shape[0]))
                         self.line1.set_ydata(hvalid)
-                        self.axis.vlines(self.best_epoch, 0, 1, colors='red', linestyles='dashed')
+                        self.axis.vlines(self.best_epoch, 0, 1, colors='#EBDDE2', linestyles='dashed')
                     
                 self.axis.legend()
                 if 'val_acc' in logs.keys():
