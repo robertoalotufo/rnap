@@ -1,4 +1,9 @@
-from __future__ import print_function
+
+# coding: utf-8
+
+# Funções necessárias para o pré-processsamento das imagens antes de inseri-lás na CNN U-NET.
+
+# In[ ]:
 
 import os
 import cv2
@@ -14,29 +19,19 @@ from keras import backend as K
 
 K.set_image_dim_ordering('th')  # Theano dimension ordering in this code
 
-out = '/home/adessowiki/Development/Oeslle/rnpi-notebooks'
-#nifiti_path = os.path.join(out,'CC359/Original/*.nii.gz')
-#staple_path = os.path.join(out,'CC359/STAPLE')
-nifiti_path = os.path.join(out,'Original-Nifti/*/*/*.nii.gz')
-staple_path = os.path.join(out,'STAPLE8')
+n_base = 250 # 250 imagens para o treinamento
+max_patches = 100 # número máximo de patches em cada imagem utilizada no treino.
+n_imgs = 4 # número de imagens para o teste.
 
-nifiti_imgs = np.sort(glob.glob(nifiti_path))
-
-
-n_base = 250 # 250 images for training, 109 images for test
-max_patches = 100
-n_imgs = 4
-t = 0.9
-
-# Configurações da u-net
+# Configuracoes da u-net
 img_rows = 64
 img_cols = 80
 patch_size = (img_rows,img_cols) # unet input size 
 
+# Criação dos dados em formato de array .py  a partir dos patches extraídos.
 def create_data(folder):
 
-    data_path = os.path.join(out,folder)  
-    images = natsorted(os.listdir(data_path))
+    images = natsorted(os.listdir(folder))
     total = len(images) / 2
     imgs = np.ndarray((total, 1, patch_size[0], patch_size[1]), dtype=np.uint8)
     imgs_mask = np.ndarray((total, 1, patch_size[0], patch_size[1]), dtype=np.uint8)
@@ -48,8 +43,8 @@ def create_data(folder):
             continue
         image_mask_name = image_name.split('-')[0] + '-staplepatch.tif'
 
-        img = cv2.imread(os.path.join(data_path, image_name), cv2.IMREAD_GRAYSCALE)
-        img_mask = cv2.imread(os.path.join(data_path, image_mask_name), cv2.IMREAD_GRAYSCALE)
+        img = cv2.imread(os.path.join(folder, image_name), cv2.IMREAD_GRAYSCALE)
+        img_mask = cv2.imread(os.path.join(folder, image_mask_name), cv2.IMREAD_GRAYSCALE)
 
         img = np.array([img])
         img_mask = np.array([img_mask])
@@ -65,86 +60,65 @@ def create_data(folder):
 
     return imgs, imgs_mask
 
-def save_data(imgs, imgs_mask, imgs_name, imgs_mask_name):
+# salva array contendo os patches no formato .npy
+def save_data(imgs, imgs_mask, imgs_name, imgs_mask_name, out):
 
     np.save(os.path.join(out,imgs_name), imgs)
     np.save(os.path.join(out,imgs_mask_name), imgs_mask)
     
     print('Saved data to .npy.')
-    
-def get_mid_sample(img_path):
 
-    name = img_path.split('/')[-1].split('.')[0]
-    staple_img = os.path.join(staple_path,name + '_staple.nii.gz') 
-
-    data = nib.load(img_path).get_data()
-    staple_data = nib.load(staple_img).get_data() > t
-
-    H,W,Z = data.shape
-    Hc,Wc,Zc = H/2,W/2,Z/2
-
-    sag = data[Hc,:,:]
-    staple = staple_data[Hc,:,:]
-
-    return sag, staple, name, staple_img
-
-def save_test_images(out_path):
-    
-    for img in nifiti_imgs[n_base:]: 
-        sag, staple, name, _ = get_mid_sample(img)
-        save_2d_slices(out_path,name,sag,staple)
-
-def save_2d_slices(dst_path,name,img,mask):
-
-    cv2.imwrite(os.path.join(dst_path,name + '_staple.tif'),mask.astype(np.uint8)*255)
-    scipy.misc.imsave(os.path.join(dst_path,name +'.tif'),img)
-    
+# salva imagens no formata .tif
 def save_2d_samples(dst_path,name,img,mask):
 
     for i in range(img.shape[0]):
         cv2.imwrite(os.path.join(dst_path,name + '_' + str(i+1) + '-staplepatch.tif'),
                     mask[i].astype(np.uint8)*255)
         scipy.misc.imsave(os.path.join(dst_path,name + '_' + str(i+1) +'-sagpatch.tif'),img[i])
-    
-def sample_2d_patches(folder, opt):
 
+# Extrai patches a partir de imagens 2D. A extração dos patches é realizada com a função do sklearn 'extract_patches_2d' 
+# (http://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.image.extract_patches_2d.html)
+def sample_2d_patches(srcDir, dstDir, opt):
+    
+    mid_sag_samples = np.sort(glob.glob(os.path.join(srcDir, '*_staple.tif')))
+    
     if (opt == 'train'):
         print ('Sampling Train Images ...')
        
-        for img in nifiti_imgs[:n_base]: 
-
-            sag, staple,name,_ = get_mid_sample(img)           
+        for img in mid_sag_samples:
+            name = img.split('/')[-1].split('_staple.tif')[0]
+            
+            sag = cv2.imread(os.path.join(srcDir, name + '.tif'), cv2.IMREAD_GRAYSCALE)
+            staple = cv2.imread(os.path.join(srcDir, name + '_staple.tif'), cv2.IMREAD_GRAYSCALE)
+                      
             sag_patches = extract_patches_2d(sag, patch_size, max_patches, random_state = 1)
             staple_patches = extract_patches_2d(staple, patch_size, max_patches, random_state = 1)
             
-            print ('Saving image:', name)
-
-            save_2d_samples(out + '/train_patches', name, sag_patches,staple_patches)
-
-
+            print ('Saving train image patches:', name)
+            save_2d_samples(dstDir, name, sag_patches,staple_patches)
+            
     if (opt == 'test'):
         print ('Sampling Test Images ...')
 
-        for img in nifiti_imgs[n_base:n_base+n_imgs]: 
-
-            sag,staple,name,_ = get_mid_sample(img)
-
+        for img in mid_sag_samples[:n_imgs]:
+            name = img.split('/')[-1].split('_staple.tif')[0]
+            
+            sag = cv2.imread(os.path.join(srcDir, name + '.tif'), cv2.IMREAD_GRAYSCALE)
+            staple = cv2.imread(os.path.join(srcDir, name + '_staple.tif'), cv2.IMREAD_GRAYSCALE)
+                      
             sag_patches = extract_patches_2d(sag, patch_size)
             staple_patches = extract_patches_2d(staple, patch_size)
 
-            print ('Saving image:', name)
+            print ('Saving test image patches:', name)           
+            out = os.path.join(dstDir,name)
+            print (out)
             
-            dirPath = os.path.join(out,'test_patches')
-            dirPath = os.path.join(dirPath,name)
- 
-            if not os.path.exists(dirPath):
-                os.makedirs(dirPath)
+            if not os.path.exists(out):
+                os.makedirs(out)
             
-            save_2d_samples(dirPath, name, sag_patches,staple_patches)
+            save_2d_samples(out, name, sag_patches,staple_patches)
 
-            sag_patches = 0
-            staple_patches = 0
-            
+# Faz resize das imagens para o tamanho de entrada da U-NET
 def preprocess(imgs):
     
     imgs_p = np.ndarray((imgs.shape[0], imgs.shape[1], img_rows, img_cols), dtype=np.uint8)
@@ -152,6 +126,7 @@ def preprocess(imgs):
         imgs_p[i, 0] = cv2.resize(imgs[i, 0], (img_cols, img_rows), interpolation=cv2.INTER_CUBIC)
     return imgs_p
 
+# Extrai a média e o desvio padrão dos dados de treino para normalizar o teste
 def get_mean_std_train(imgs,mask):
 
     imgs_train, imgs_mask_train = load_train_data(imgs,mask)
@@ -165,12 +140,10 @@ def get_mean_std_train(imgs,mask):
     
     return mean,std
 
-def read_prep_test(src_path,mean,std):
+# Ler os dados de teste e faz o resize mais a normalização
+def read_prep_test(img,mean,std):
         
-    #imgs_test = np.load(src_path) 
-    #imgs_test = preprocess(imgs_test)
-    
-    imgs_test = preprocess(src_path)
+    imgs_test = preprocess(img)
     
     imgs_test = imgs_test.astype('float32')
     imgs_test -= mean
@@ -178,12 +151,17 @@ def read_prep_test(src_path,mean,std):
 
     return imgs_test
 
+# Carrega os dados de treino em formato .py 
 def load_train_data(imgs,mask):
     
     imgs_train = np.load(imgs)
     imgs_mask_train = np.load(mask)
+    
     return imgs_train, imgs_mask_train
 
+# Reconstroi as imagens a partir dos patches preditos da saída da CNN. A função utilizada par aisso é do sklean
+# 'reconstruct_from_patches_2d' 
+# (http://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.image.reconstruct_from_patches_2d.html)
 def reconstruct_2d_sample(dst_path, data_path, root_folder):
 
     pred_imgs_maks_test = np.load(data_path)
@@ -201,3 +179,9 @@ def reconstruct_2d_sample(dst_path, data_path, root_folder):
     del(orig_mask)
     rec_image_mask = reconstruct_from_patches_2d(pred_imgs_maks_test,orig_size)
     cv2.imwrite(os.path.join(dst_path,name + '-pred.tif'),rec_image_mask.astype(np.uint8)*255)
+
+
+# In[1]:
+
+get_ipython().system(u'ipython nbconvert prep_ss_utils.py')
+
