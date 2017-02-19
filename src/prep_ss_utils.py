@@ -3,12 +3,11 @@
 
 # Funções necessárias para o pré-processsamento das imagens antes de inseri-lás na CNN U-NET.
 
-# In[ ]:
+# In[2]:
 
 import os
 import cv2
 import numpy as np
-import nibabel as nib
 import glob
 import os,time
 import scipy.misc
@@ -181,7 +180,12 @@ def reconstruct_2d_sample(dst_path, data_path, root_folder):
     cv2.imwrite(os.path.join(dst_path,name + '-pred.tif'),rec_image_mask.astype(np.uint8)*255)
 
 
-# In[1]:
+# In[3]:
 
 get_ipython().system(u'ipython nbconvert prep_ss_utils.py')
+
+
+# In[ ]:
+
+
 
