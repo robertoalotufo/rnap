@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# convolution network models
+*.model
+
 # C extensions
 *.so
 
