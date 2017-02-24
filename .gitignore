@@ -5,6 +5,7 @@ __pycache__/
 
 # convolution network models
 *.model
+*.history
 
 # C extensions
 *.so
