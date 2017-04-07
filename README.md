@@ -1,2 +1,2 @@
-# rnpi-preparacao
-Área para preparação do Curso Práticas de Redes Neurais Profundas para Análise de Imagens
+# rnap Redes Neurais e Aprendizado Profundo de Máquina
+Área para preparação do Curso de Redes Neurais e Aprendizado Profundo de Máquina
