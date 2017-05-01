@@ -83,4 +83,66 @@ def Jview3D(X_bias, y, w_history, w_opt):
     ax.set_xlabel(r'$w_0$',fontsize = 35)
     ax.set_ylabel(r'$w_1$',fontsize = 35)
     ax.set_zlabel('Custo (J)',fontsize = 35);
+
+def softmax(Z):
+    # computes softmax for all samples, normalize among classes (columns)
+    # input Z: scores; shape: samples rows x classes columns
+    # output S: same shape of input
+    EZ = np.exp(Z)
+    S = EZ / EZ.sum(axis=1,keepdims=True) # normaliza nas classes - colunas
+    return S
+
+def SMpredict(X,WT):
+    S = softmax(X.dot(WT))
+    # escolhe a maior probabilidade entre as classes
+    Y_hat = np.argmax(S,axis=1)
+    return Y_hat
+
+def FSView(X_bias,Y,WT):
+    h = .02  # step size in the mesh
+    folga = 0.1
+    # Calcula a grade para o espaço de atributos
+    X_c = X_bias[:,1:]
+    x_min, x_max = X_c.min(axis=0) - folga, X_c.max(axis=0) + folga
+    xx, yy = np.meshgrid(np.arange(x_min[0], x_max[0], h), np.arange(x_min[1], x_max[1], h))
+    X_grid = np.c_[xx.ravel(), yy.ravel()]
+    X_grid = np.hstack([np.ones((X_grid.shape[0],1)),X_grid]) # incluído X00 como 1 para gerar bias no W
+
+    # Faz a predição para todas as amostras do espaço de atributos
+    Z = SMpredict(X_grid, WT)
+
+    # Mostra o resultado da predição (0, 1 ou 2) no gráfico
+    Z = Z.reshape(xx.shape)
+    plt.pcolormesh(xx, yy, Z, cmap=plt.cm.Paired)
+
+    # Mostra os pontos das amostras de treinamento
+    colors = np.array(['r','y','b'])
+    plt.scatter(X_bias[:, 1], X_bias[:, 2], c=colors[Y], edgecolors='k', cmap=plt.cm.Paired)
+    plt.xlabel('Sepal length')
+    plt.ylabel('Sepal width')
+    plt.show()
     
+def FSView_keras(Xc,Y,model):
+    h = .02  # step size in the mesh
+    folga = 0.1
+    # Calcula a grade para o espaço de atributos
+
+    x_min, x_max = Xc.min(axis=0) - folga, Xc.max(axis=0) + folga
+    xx, yy = np.meshgrid(np.arange(x_min[0], x_max[0], h), np.arange(x_min[1], x_max[1], h))
+    X_grid = np.c_[xx.ravel(), yy.ravel()]
+    #X_grid = np.hstack([np.ones((X_grid.shape[0],1)),X_grid]) # incluído X00 como 1 para gerar bias no W
+
+    # Faz a predição para todas as amostras do espaço de atributos
+    Z = model.predict_classes(X_grid)
+
+    # Mostra o resultado da predição (0, 1 ou 2) no gráfico
+    Z = Z.reshape(xx.shape)
+    plt.figure(1, figsize=(6, 5))
+    plt.pcolormesh(xx, yy, Z, cmap=plt.cm.Paired)
+
+    # Mostra os pontos das amostras de treinamento
+    colors = np.array(['r','y','b'])
+    plt.scatter(Xc[:, 0], Xc[:, 1], c=colors[Y], edgecolors='k', cmap=plt.cm.Paired)
+    plt.xlabel('Sepal length')
+    plt.ylabel('Sepal width')
+    plt.show()
