@@ -5,7 +5,7 @@
 
 import os, time
 import numpy as np
-import cPickle as pickle
+import pickle
 from IPython import display
 import matplotlib.pyplot as plot
 from keras.models import load_model
@@ -117,10 +117,10 @@ class TrainingPlotter(Callback):
                 display.clear_output(wait=True)
 
         except Exception as e:
-            print '=*' * 40
-            print 'Error while trying to plot losses...'
-            print e
-            print '*=' * 40
+            print('=*' * 40)
+            print('Error while trying to plot losses...')
+            print(e)
+            print('*=' * 40)
             raise
             
     def on_batch_begin(self, batch, logs={}):
