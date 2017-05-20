@@ -24,8 +24,9 @@ def Jview(X_bias, y, w_history, w_opt):
     #print('wmax:', wmax)
 
     # Cálculo da matriz bidimensional de parâmetros
-    xx, yy = np.meshgrid(np.linspace(wmin[0], wmax[0],100), np.linspace(wmin[1], wmax[1],100))
-    w_grid = np.c_[xx.ravel(), yy.ravel()]
+    ww0, ww1 = np.meshgrid(np.linspace(wmin[0], wmax[0],100), 
+                         np.linspace(wmin[1], wmax[1],100))
+    w_grid = np.c_[ww0.ravel(), ww1.ravel()]
     #print(xx.shape)
     #print(w_grid.shape)
     #print(X_bias.shape)
@@ -35,13 +36,14 @@ def Jview(X_bias, y, w_history, w_opt):
     J_grid = compute_cost(X_bias, y, w_grid.T)
 
     # Plotagem de J na matriz de parâmetros
-    J_grid = J_grid.reshape(xx.shape)
-    plt.pcolormesh(xx, yy, J_grid, cmap=plt.cm.Paired)
+    J_grid = J_grid.reshape(ww0.shape)
+    plt.pcolormesh(ww0, ww1, J_grid, cmap=plt.cm.coolwarm)
+    plt.contour(ww0, ww1, J_grid, 20)
 
     # Plotagem dos pontos da sequência dos parâmetros durante o processo do gradiente descendente
 
-    plt.scatter(w_history[:,0],w_history[:,1])
-    plt.scatter(w_opt[0],w_opt[1],marker='x', c='b') # Solução analítica
+    plt.scatter(w_history[:,0],w_history[:,1],c='r',marker = 'o')
+    plt.scatter(w_opt[0],w_opt[1],marker='x', c='w') # Solução analítica
     plt.title('Visualização do treinamento de w na função de Custo J')
     plt.show()
     
@@ -59,27 +61,30 @@ def Jview3D(X_bias, y, w_history, w_opt):
     #print('wmax:', wmax)
 
     # Cálculo da matriz bidimensional de parâmetros
-    xx, yy = np.meshgrid(np.linspace(wmin[0], wmax[0],100), np.linspace(wmin[1], wmax[1],100))
-    w_grid = np.c_[xx.ravel(), yy.ravel()]
-    #print(xx.shape)
-    #print(w_grid.shape)
-    #print(X_bias.shape)
+    ww0, ww1 = np.meshgrid(np.linspace(wmin[0], wmax[0],100), 
+                         np.linspace(wmin[1], wmax[1],100))
+    w_grid = np.c_[ww0.ravel(), ww1.ravel()]
 
     # Cálculo do J(w) para todos os w da matriz de parâmetros
-
     J_grid = compute_cost(X_bias, y, w_grid.T)
 
     # Plotagem de J na matriz de parâmetros
-    J_grid = J_grid.reshape(xx.shape)
+    J_grid = J_grid.reshape(ww0.shape)
 
     fig = plt.figure(figsize=(35,17.75))
     ax = fig.add_subplot(111, projection='3d')
 
     #plota a superfcie 3D
-    ax.plot_surface(xx, yy, J_grid, rstride=3, cstride=3,  alpha=0.1, cmap=cm.coolwarm)
+    ax.plot_surface(ww0, ww1, J_grid, alpha=0.5, cmap=cm.coolwarm)
+    ax.contour(ww0,ww1,J_grid,20)
+    
     #Plota o historicos do vetor W
-    ax.scatter(w_history[:,0],w_history[:,1],c='r',marker = 'o',s = 80)
+    J_history = compute_cost(X_bias, y, w_history.T)
+    ax.scatter(w_history[:,0],w_history[:,1],J_history,c='r',marker = 'o',s = 80)
+    
+    # Marca o ponto ótimo pela solução analítica
     ax.scatter(w_opt[0],w_opt[1],marker='x', c='b',s = 80)
+    
     ax.set_xlabel(r'$w_0$',fontsize = 35)
     ax.set_ylabel(r'$w_1$',fontsize = 35)
     ax.set_zlabel('Custo (J)',fontsize = 35);
