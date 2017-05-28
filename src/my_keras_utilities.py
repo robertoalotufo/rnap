@@ -11,6 +11,14 @@ import matplotlib.pyplot as plot
 from keras.models import load_model
 from keras.callbacks import Callback
 
+try:
+    from tensorflow.python.client import device_lib
+    def get_available_gpus():
+        local_device_protos = device_lib.list_local_devices()
+        return [x.name for x in local_device_protos if x.device_type == 'GPU']
+except:
+    pass
+
 def load_model_and_history(name):
     model_fn = name + '.model'
     history_fn = name + '.history'
@@ -137,7 +145,7 @@ class TrainingPlotter(Callback):
         pass
 
 
-# In[ ]:
+  
 
 
 
