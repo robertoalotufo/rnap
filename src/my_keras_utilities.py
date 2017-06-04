@@ -37,12 +37,13 @@ class TrainingPlotter(Callback):
     """
     History + ModelCheckpoint + EarlyStopping + PlotLosses
     """
-    def __init__(self, n=1, filepath=None, patience=10, axis=None):
+    def __init__(self, n=1, filepath=None, patience=10, axis=None, plot_losses=True):
         self.history = []
         self.best_loss = np.inf
         self.best_epoch = 0
         self.filepath = filepath
         self.patience = patience
+        self.plot_losses = plot_losses
         
         self.n = n
         self.line1 = None
@@ -53,7 +54,8 @@ class TrainingPlotter(Callback):
         # we do not want to pickle the matplotlib line1/line2/axis
         return dict(n=self.n, history=self.history, best_loss=self.best_loss, 
                     best_epoch=self.best_epoch, filepath=self.filepath, 
-                    patience=self.patience, line1=None, line2=None, axis=None)
+                    plot_losses=self.plot_losses, patience=self.patience, 
+                    line1=None, line2=None, axis=None)
 
     def get_nepochs(self):
         return len(self.history)
@@ -83,6 +85,9 @@ class TrainingPlotter(Callback):
             val = True
         else:
             val = False
+            
+        if not plot_losses:
+            return
             
         if self.axis is None:
             self.axis = plot
