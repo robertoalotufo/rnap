@@ -86,7 +86,7 @@ class TrainingPlotter(Callback):
         else:
             val = False
             
-        if not plot_losses:
+        if not self.plot_losses:
             return
             
         if self.axis is None:
