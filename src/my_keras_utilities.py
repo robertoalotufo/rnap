@@ -63,6 +63,24 @@ class TrainingPlotter(Callback):
     def on_epoch_begin(self, epoch, logs={}):
         self.epoch_t0 = time.time()
 
+    def checkpoint(self, epoch, value):
+        if value < self.best_loss:
+            self.best_loss = value
+            self.best_epoch = epoch
+            if self.filepath is not None:
+                save_model_and_history(self.filepath, self.model, self)
+        
+    def early_stop(self, value):
+        early_stop_msg = ''
+        if value < self.best_loss:
+            self.waiting = 0
+        else:
+            self.waiting += 1
+            if self.waiting > self.patience:
+                self.model.stop_training = True
+                early_stop_msg = 'Early Stopped.'
+        return early_stop_msg
+    
     def on_epoch_end(self, epoch, logs={}):
         # {'acc': 0.97, 'loss': 0.08, 'val_acc': 0.98, 'val_loss': 0.06}
         epoch += self.nepochs
@@ -70,22 +88,17 @@ class TrainingPlotter(Callback):
         self.history.append(logs)
         
         if 'val_loss' in logs.keys():
-            early_stop_msg = ''
-            if logs['val_loss'] < self.best_loss:
-                self.best_loss = logs['val_loss']
-                self.best_epoch = epoch
-                self.waiting = 0
-                if self.filepath is not None:
-                    save_model_and_history(self.filepath, self.model, self)
-            else:
-                self.waiting += 1
-                if self.waiting > self.patience:
-                    self.model.stop_training = True
-                    early_stop_msg = 'Early Stopped.'
+            chk_value = logs['val_loss']
             val = True
+            lab = 'validation'
         else:
+            chk_value = logs['loss']
             val = False
-            
+            lab = 'training'
+
+        early_stop_msg = self.early_stop(chk_value)
+        self.checkpoint(epoch, chk_value)
+        
         if not self.plot_losses:
             return
             
@@ -102,28 +115,29 @@ class TrainingPlotter(Callback):
                     self.line2 = self.axis.plot(htrain, linewidth=2, label='training mse')[0]
                     if val:
                         self.line1 = self.axis.plot(hvalid, linewidth=2, label='validation mse')[0]
-                        self.axis.vlines(self.best_epoch, 0, 100, colors='#EBDDE2', linestyles='dashed', 
-                                         label='validation min')
+                    self.axis.vlines(self.best_epoch, 0, 100, colors='#EBDDE2', linestyles='dashed', 
+                                     label='{} min'.format(lab))
                 else:
                     self.line2.set_xdata(np.arange(htrain.shape[0]))
                     self.line2.set_ydata(htrain)
                     if val:
                         self.line1.set_xdata(np.arange(hvalid.shape[0]))
                         self.line1.set_ydata(hvalid)
-                        self.axis.vlines(self.best_epoch, 0, 100, colors='#EBDDE2', linestyles='dashed')
+                    self.axis.vlines(self.best_epoch, 0, 100, colors='#EBDDE2', linestyles='dashed')
                     
                 self.axis.legend()
                 if 'val_acc' in logs.keys():
                     acc = ' Accuracy = {:.2f}%'.format(100.0 * self.history[self.best_epoch]['val_acc'])
                 else:
                     acc = ''
+
+                self.axis.title('{} Best loss is {:.5f} on epoch {:d}.{}'.format(early_stop_msg, self.best_loss, 
+                                                                                 self.best_epoch, acc), weight='bold')
                 if val:
-                    self.axis.title('{} Best loss is {:.5f} on epoch {:d}.{}'
-                                    .format(early_stop_msg, self.best_loss, self.best_epoch, acc), 
-                                    weight='bold')
                     self.axis.ylabel('Losses [{:.5f} / {:.5f}]'.format(htrain[-1], hvalid[-1]))
                 else:
-                    self.axis.ylabel('Training Loss: {:.5f}'.format(htrain[-1]))
+                    self.axis.ylabel('Loss {:.5f}'.format(htrain[-1]))
+                
                 self.axis.xlabel('Epoch [{}: {:.2f}s]'.format(epoch, epoch_time))
                 
                 display.display(plot.gcf())
