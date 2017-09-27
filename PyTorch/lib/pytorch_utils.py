@@ -1,6 +1,8 @@
 import copy
 import time
 import pickle
+import torch
+from torch.autograd import Variable
 
 class DeepNetTrainer:
     
@@ -29,15 +31,19 @@ class DeepNetTrainer:
         if self.scheduler is not None:
             self.scheduler.last_epoch = self.last_epoch
             
-    def fit(self, n_epochs, train_data, valid_data=None):
+    def fit(self, n_epochs, train_data, valid_data=None, use_gpu='auto'):
         data = dict(train=train_data, valid=valid_data)
         if valid_data is None:
             phases = [('train', True)]
         else:
             phases = [('train', True), ('valid', False)]
+     
+        if use_gpu == 'auto':
+            use_gpu = torch.cuda.is_available()
+        assert use_gpu == False or use_gpu == True
             
         try:
-            best_model = copy.deepcopy(model)
+            best_model = copy.deepcopy(self.model)
             best_loss = 1e10
             best_epoch = self.last_epoch
 
@@ -61,7 +67,7 @@ class DeepNetTrainer:
                         else:
                             X, Y = Variable(X), Variable(Y)
 
-                        Ypred = model.forward(X)
+                        Ypred = self.model.forward(X)
                         loss = self.criterion(Ypred, Y)
                         if is_train:
                             self.optimizer.zero_grad()
@@ -92,7 +98,7 @@ class DeepNetTrainer:
                     is_best = 'best'
                     best_loss = eloss
                     best_epoch = i
-                    best_model = copy.deepcopy(model)
+                    best_model = copy.deepcopy(self.model)
                     if self.basename is not None:
                         self.save_trainer_state(self.basename, self.model, self.optimizer, self.metrics)
 
