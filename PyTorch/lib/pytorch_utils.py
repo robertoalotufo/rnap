@@ -1,3 +1,7 @@
+import copy
+import time
+import pickle
+
 class DeepNetTrainer:
     
     def __init__(self, file_basename=None, model=None, criterion=None, metrics=None, 
