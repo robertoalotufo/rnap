@@ -145,7 +145,9 @@ class DeepNetTrainer:
             print('{:3d}: {:5.1f}s   T: {:.5f} {}'
                   .format(i, etime - t0, self.metrics['train']['losses'][-1], is_best))
 
-    def predict(self, data_loader):
+    def predict(self, data_loader, use_gpu='auto'):
+        if use_gpu == 'auto':
+            use_gpu = torch.cuda.is_available()
         predictions = []
         try:
             self.model.train(False)  # Set model to evaluate mode
@@ -164,7 +166,9 @@ class DeepNetTrainer:
             if len(predictions) > 0:
                 return torch.cat(predictions, 0)
 
-    def evaluate(self, data_loader, metrics=None):
+    def evaluate(self, data_loader, metrics=None, use_gpu='auto'):
+        if use_gpu == 'auto':
+            use_gpu = torch.cuda.is_available()
         n_batches = 0
         try:
             if metrics is None:
