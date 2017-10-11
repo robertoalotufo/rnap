@@ -9,7 +9,7 @@ from torch.autograd import Variable
 class DeepNetTrainer:
     
     def __init__(self, file_basename=None, model=None, criterion=None, metrics=None, 
-                 optimizer=None, lr_scheduler=None, reset=False):
+                 optimizer=None, lr_scheduler=None, callbacks=[], reset=False):
         assert (model is not None) and (criterion is not None) and (optimizer is not None)
         self.basename = file_basename
         self.model = model
@@ -18,6 +18,7 @@ class DeepNetTrainer:
         self.scheduler = lr_scheduler
         self.metrics = dict(train=dict(losses=[]), valid=dict(losses=[]))
         self.compute_metric = dict()
+        self.callbacks = callbacks
         
         if metrics is not None:
             for name, funct in metrics.items():
@@ -46,7 +47,7 @@ class DeepNetTrainer:
             
         try:
             print('Starting training for {} epochs\n'.format(n_epochs))
-
+            
             best_model = copy.deepcopy(self.model)
             best_epoch = self.last_epoch
             best_loss = 1e10
@@ -54,6 +55,9 @@ class DeepNetTrainer:
                 best_loss = self.metrics['valid']['losses'][-1] or self.metrics['train']['losses'][-1]
                 self.print_losses(self.last_epoch)
 
+            for cb in self.callbacks:
+                cb.on_train_begin(self, has_validation=(valid_data is not None))
+                
             for i in range(self.last_epoch + 1, self.last_epoch + n_epochs + 1):
                 t0 = time.time()
                 
@@ -93,7 +97,7 @@ class DeepNetTrainer:
                     for name, fun in self.compute_metric.items():
                         metric = float(epo_metrics[name] / epo_samp)
                         self.metrics[phase][name].append(metric)
-
+                        
                 if valid_data is None:
                     self.metrics['valid']['losses'].append(None)
                     for name, fun in self.compute_metric.items():
@@ -109,8 +113,12 @@ class DeepNetTrainer:
                         self.save_trainer_state(self.basename, self.model, self.optimizer, self.metrics)
 
                 self.print_losses(i, t0, is_best)
-                t0 = time.time()
 
+                for cb in self.callbacks:
+                    cb.on_epoch_end(self, i, best_epoch, t0)
+
+                t0 = time.time()
+                
         except KeyboardInterrupt:
             print('Interrupted!!')
 
