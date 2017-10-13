@@ -58,9 +58,11 @@ class DeepNetTrainer:
             for cb in self.callbacks:
                 cb.on_train_begin(self, has_validation=(valid_data is not None))
                 
+            # for each epoch
             for i in range(self.last_epoch + 1, self.last_epoch + n_epochs + 1):
                 t0 = time.time()
                 
+                # for training and evaluating
                 for phase, is_train in phases:
                 
                     epo_samp = 0
@@ -70,7 +72,8 @@ class DeepNetTrainer:
                     self.model.train(is_train)
                     if is_train and self.scheduler is not None:
                         self.scheduler.step()
-
+                    
+                    # for each minibatch
                     for ii, (X, Y) in enumerate(data[phase]):
                         if use_gpu:
                             X, Y = Variable(X.cuda()), Variable(Y.cuda())
@@ -90,14 +93,16 @@ class DeepNetTrainer:
                         for name, fun in self.compute_metric.items():
                             metric = fun(Ypred, Y)
                             epo_metrics[name] += metric
-
+                    
+                    #end minibatch
                     eloss = float(epo_loss / epo_samp)
                     self.metrics[phase]['losses'].append(eloss)
                     
                     for name, fun in self.compute_metric.items():
                         metric = float(epo_metrics[name] / epo_samp)
                         self.metrics[phase][name].append(metric)
-                        
+                
+                # end phase
                 if valid_data is None:
                     self.metrics['valid']['losses'].append(None)
                     for name, fun in self.compute_metric.items():
@@ -117,7 +122,7 @@ class DeepNetTrainer:
                 for cb in self.callbacks:
                     cb.on_epoch_end(self, i, best_epoch, t0)
 
-                t0 = time.time()
+                #t0 = time.time()
                 
         except KeyboardInterrupt:
             print('Interrupted!!')
@@ -140,18 +145,21 @@ class DeepNetTrainer:
         elif has_valid:
             # validation and no metrics
             print('{:3d}: {:5.1f}s   T: {:.5f}   V: {:.5f} {}'
-                  .format(i, etime, self.metrics['train']['losses'][-1],
-                                               self.metrics['valid']['losses'][-1], is_best))
+                  .format(i, etime, 
+                          self.metrics['train']['losses'][-1],
+                          self.metrics['valid']['losses'][-1], is_best))
         elif not has_valid and has_metrics:
             # no validation and metrics
             mtrc = list(self.compute_metric.keys())[0]
             print('{:3d}: {:5.1f}s   T: {:.5f} {:.5f} {}'
-                  .format(i, etime, self.metrics['train']['losses'][-1],
-                                               self.metrics['train'][mtrc][-1], is_best))
+                  .format(i, etime, 
+                          self.metrics['train']['losses'][-1],
+                          self.metrics['train'][mtrc][-1], is_best))
         else:
             # no validation and no metrics
             print('{:3d}: {:5.1f}s   T: {:.5f} {}'
-                  .format(i, etime - t0, self.metrics['train']['losses'][-1], is_best))
+                  .format(i, etime, 
+                          self.metrics['train']['losses'][-1], is_best))
 
     def predict(self, data_loader, use_gpu='auto'):
         if use_gpu == 'auto':
@@ -159,6 +167,7 @@ class DeepNetTrainer:
         predictions = []
         try:
             self.model.train(False)  # Set model to evaluate mode
+            ii_n = len(data_loader)
             for ii, (image, labels) in enumerate(data_loader):
                 if use_gpu:
                     image = Variable(image.cuda())
@@ -166,7 +175,7 @@ class DeepNetTrainer:
                     image = Variable(image)
                 outputs = self.model.forward(image)
                 predictions.append(outputs.data.cpu())
-                print('\rpredict: {}'.format(ii), end='')
+                print('\rpredict: {}/{}'.format(ii,ii_n-1), end='')
             print(' ok')
         except KeyboardInterrupt:
             print(' interrupted!')
@@ -184,9 +193,10 @@ class DeepNetTrainer:
             else:
                 metric_dict = metrics
             epo_metrics = {}
-            for name in metric_dict.keys():
+            for name in metric_dict.keys(): #zero all metrics
                 epo_metrics[name] = 0
             self.model.train(False)  # Set model to evaluate mode
+            ii_n = len(data_loader)
             for ii, (X, Y) in enumerate(data_loader):
                 if use_gpu:
                     X, Y = Variable(X.cuda()), Variable(Y.cuda())
@@ -197,7 +207,7 @@ class DeepNetTrainer:
                     vmetric = fun(Ypred, Y)
                     epo_metrics[name] += vmetric
                 n_batches += 1
-                print('\revaluate: {}'.format(ii), end='')
+                print('\revaluate: {}/{}'.format(ii,ii_n-1), end='')
             print(' ok')
         except KeyboardInterrupt:
             print(' interrupted!')
