@@ -50,12 +50,12 @@ class ProgressBar(object):
         if i in self.ticks:
             b = int(np.ceil(((i+1) / self.nf) * self.length))
             sys.stdout.write("\r[{0}{1}] {2}%\t{3}".format(
-                "="*b, " "*(self.length-b), int(100*((i+1) / self.nf)), message
+                "="*b,">"," "*(self.length-b), int(100*((i+1) / self.nf)), message
             ))
             sys.stdout.flush()
 
     def close(self, message=""):
         # Move the bar to 100% before closing
         self.bar(self.n-1)
-        sys.stdout.write("{0}\n\n".format(message))
+        sys.stdout.write("{0}\n".format(message))
         sys.stdout.flush()

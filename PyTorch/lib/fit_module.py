@@ -119,6 +119,36 @@ class FitModule(Module):
                 pb.close(log_to_message(log))
         return logs
 
+    def predict_loader(self, dataloader):
+        """Generates output predictions for a data loader.
+
+        Computation is done in batches.
+
+        # Arguments
+            dataloader: input dataloader Tensor.
+
+        # Returns
+            prediction Tensor.
+        """
+        # Batch prediction
+        self.eval()
+        r = 0
+        n = 0
+        for k in dataloader: 
+            n+=len(k[0])       # total number of samples in the dataloader
+        for batch_data in dataloader:
+            batch_size = len(batch_data[0])
+            # Predict on batch
+            X_batch = Variable(batch_data[0])
+            y_batch_pred = self(X_batch).data
+            # Infer prediction shape
+            if r == 0:
+                y_pred = torch.zeros((n,) + y_batch_pred.size()[1:])
+            # Add to prediction tensor
+            y_pred[r : min(n, r + batch_size)] = y_batch_pred
+            r += batch_size
+        return y_pred
+
     def predict(self, X, batch_size=32):
         """Generates output predictions for the input samples.
 
@@ -132,18 +162,5 @@ class FitModule(Module):
             prediction Tensor.
         """
         # Build DataLoader
-        data = get_loader(X, batch_size=batch_size)
-        # Batch prediction
-        self.eval()
-        r, n = 0, X.size()[0]
-        for batch_data in data:
-            # Predict on batch
-            X_batch = Variable(batch_data[0])
-            y_batch_pred = self(X_batch).data
-            # Infer prediction shape
-            if r == 0:
-                y_pred = torch.zeros((n,) + y_batch_pred.size()[1:])
-            # Add to prediction tensor
-            y_pred[r : min(n, r + batch_size)] = y_batch_pred
-            r += batch_size
-        return y_pred
+        data = get_loader(X, batch_size=batch_size, shuffle=False)
+        return self.predict_loader(data)
