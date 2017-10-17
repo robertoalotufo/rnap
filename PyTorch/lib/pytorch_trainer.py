@@ -158,15 +158,19 @@ class DeepNetTrainer(object):
         for cb in self.callbacks:
             cb.on_train_end(n_epochs, self.metrics)
 
-    def predict_loader(self, data_loader, use_gpu='auto'):
-        if use_gpu == 'auto':
-            use_gpu = torch.cuda.is_available()
+    def predict(self, X):
+        pass
+
+    def evaluate(self, X, y, metrics=None):
+        pass
+
+    def predict_loader(self, data_loader):
         predictions = []
         try:
             self.model.train(False)  # Set model to evaluate mode
             ii_n = len(data_loader)
             for ii, (image, labels) in enumerate(data_loader):
-                if use_gpu:
+                if self.use_gpu:
                     image = Variable(image.cuda())
                 else:
                     image = Variable(image)
@@ -182,9 +186,7 @@ class DeepNetTrainer(object):
             if len(predictions) > 0:
                 return torch.cat(predictions, 0)
 
-    def evaluate_loader(self, data_loader, metrics=None, use_gpu='auto'):
-        if use_gpu == 'auto':
-            use_gpu = torch.cuda.is_available()
+    def evaluate_loader(self, data_loader, metrics=None):
         n_batches = 0
         epo_metrics = {}
         try:
@@ -197,7 +199,7 @@ class DeepNetTrainer(object):
             self.model.train(False)
             ii_n = len(data_loader)
             for ii, (X, Y) in enumerate(data_loader):
-                if use_gpu:
+                if self.use_gpu:
                     X, Y = Variable(X.cuda()), Variable(Y.cuda())
                 else:
                     X, Y = Variable(X), Variable(Y)
@@ -247,7 +249,7 @@ class Callback(object):
     def on_batch_begin(self, epoch, batch):
         pass
 
-    def on_batch_end(self, epoch, batch, metrics):
+    def on_batch_end(self, epoch, batch, mb_metrics):
         pass
 
 
@@ -278,7 +280,8 @@ class ModelCheckpoint(Callback):
                              self.trainer.metrics['train']['losses'][-1]
             
     def on_train_end(self, n_epochs, metrics):
-        print('Best model was saved at epoch {} with loss {:.5f}: {}'.format(self.best_epoch, self.best_loss, self.basename))
+        print('Best model was saved at epoch {} with loss {:.5f}: {}'
+              .format(self.best_epoch, self.best_loss, self.basename))
 
     def on_epoch_end(self, epoch, metrics):
         eloss = metrics['valid']['losses'][-1] or metrics['train']['losses'][-1]
