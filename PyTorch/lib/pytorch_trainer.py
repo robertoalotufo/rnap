@@ -280,9 +280,6 @@ class ModelCheckpoint(Callback):
     def on_train_end(self, n_epochs, metrics):
         print('Best model was saved at epoch {} with loss {:.5f}: {}'.format(self.best_epoch, self.best_loss, self.basename))
 
-    def on_epoch_begin(self, epoch):
-        pass
-
     def on_epoch_end(self, epoch, metrics):
         eloss = metrics['valid']['losses'][-1] or metrics['train']['losses'][-1]
         if eloss < self.best_loss:
@@ -293,12 +290,6 @@ class ModelCheckpoint(Callback):
                 save_trainer_state(self.basename, self.trainer.model, self.trainer.metrics)
                 if self.verbose > 1:
                     print('Model saved to', self.basename + '.model')
-
-    def on_batch_begin(self, epoch, batch):
-        pass
-
-    def on_batch_end(self, epoch, batch, metrics):
-        pass
 
 
 class PrintCallback(Callback):
@@ -354,9 +345,3 @@ class PrintCallback(Callback):
                 print('{:3d}: {:5.1f}s   T: {:.5f} {}'
                       .format(epoch, etime,
                               self.trainer.metrics['train']['losses'][-1], is_best))
-    
-    def on_batch_begin(self, epoch, batch):
-        pass
-
-    def on_batch_end(self, epoch, batch, metrics):
-        pass
