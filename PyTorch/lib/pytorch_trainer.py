@@ -42,14 +42,9 @@ class DeepNetTrainer(object):
             self.model.cuda()
         
     def fit(self, n_epochs, train_data, valid_data=None):
-        
-        if valid_data is None:
-            phases = [('train', True)]
-            self.has_validation = False
-        else:
-            phases = [('train', True), ('valid', False)]
-            self.has_validation = True
-            
+
+        self.has_validation = valid_data is not None
+
         try:
             mb_metrics = dict()
 
