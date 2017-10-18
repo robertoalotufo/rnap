@@ -153,11 +153,61 @@ class DeepNetTrainer(object):
         for cb in self.callbacks:
             cb.on_train_end(n_epochs, self.metrics)
 
-    def predict(self, X):
-        pass
+    def predict(self, Xin):
+        predictions = []
+        try:
+            self.model.train(False)  # Set model to evaluate mode
+            ii_n = Xin.size(0)
+            for ii, image in enumerate(Xin):
+                if self.use_gpu:
+                    image = Variable(image.cuda())
+                else:
+                    image = Variable(image)
+                outputs = self.model.forward(image)
+                predictions.append(outputs.data.cpu())
+                print('\rpredict: {}/{}'.format(ii, ii_n - 1), end='')
+            print(' ok')
 
-    def evaluate(self, X, y, metrics=None):
-        pass
+        except KeyboardInterrupt:
+            print(' interrupted!')
+
+        finally:
+            if len(predictions) > 0:
+                return torch.cat(predictions, 0)
+
+    def evaluate(self, Xin, yin, metrics=None):
+        n_batches = 0
+        epo_metrics = {}
+        try:
+            if metrics is None:
+                metric_dict = self.compute_metric
+            else:
+                metric_dict = metrics
+            for name in metric_dict.keys():
+                epo_metrics[name] = 0
+            self.model.train(False)
+            ii_n = Xin.size(0)
+            for ii, (X, Y) in enumerate(zip(Xin, yin)):
+                if self.use_gpu:
+                    X, Y = Variable(X.cuda()), Variable(Y.cuda())
+                else:
+                    X, Y = Variable(X), Variable(Y)
+                Ypred = self.model.forward(X)
+                for name, fun in metric_dict.items():
+                    vmetric = fun(Ypred, Y)
+                    epo_metrics[name] += vmetric
+                n_batches += 1
+                print('\revaluate: {}/{}'.format(ii, ii_n - 1), end='')
+            print(' ok')
+
+        except KeyboardInterrupt:
+            print(' interrupted!')
+
+        finally:
+            if n_batches > 0:
+                for name in epo_metrics.keys():
+                    epo_metrics[name] /= n_batches
+                return epo_metrics
 
     def predict_loader(self, data_loader):
         predictions = []
@@ -205,8 +255,10 @@ class DeepNetTrainer(object):
                 n_batches += 1
                 print('\revaluate: {}/{}'.format(ii, ii_n - 1), end='')
             print(' ok')
+
         except KeyboardInterrupt:
             print(' interrupted!')
+
         finally:
             if n_batches > 0:
                 for name in epo_metrics.keys():
