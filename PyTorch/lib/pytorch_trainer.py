@@ -3,9 +3,11 @@ import os
 import copy
 import time
 import pickle
-import torch
 import numpy as np
+import torch
 from torch.autograd import Variable
+from torch.utils.data import TensorDataset
+from torch.utils.data import DataLoader
 
 
 class DeepNetTrainer(object):
@@ -40,25 +42,50 @@ class DeepNetTrainer(object):
 
         if self.use_gpu:
             self.model.cuda()
+
+    def _make_loader(self, Xin, yin, batch_size=10, shuffle=True):
+        n_samples = Xin.size(0)
+        n_batches = np.ceil(n_samples / batch_size)
+        return self
         
-    def fit(self, n_epochs, train_data, valid_data=None):
+    def fit(self, n_epochs, Xin, Yin, valid_data=None, valid_split=None, batch_size=10, shuffle=True):
+        if valid_data is not None:
+            train_loader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=shuffle)
+            valid_loader = DataLoader(TensorDataset(*valid_data), batch_size=batch_size, shuffle=shuffle)
+        elif valid_split is not None:
+            iv = int(valid_split * Xin.shape[0])
+            Xval, Yval = Xin[:iv], Yin[:iv]
+            Xtra, Ytra = Xin[iv:], Yin[iv:]
+            train_loader = DataLoader(TensorDataset(Xtra, Ytra), batch_size=batch_size, shuffle=shuffle)
+            valid_loader = DataLoader(TensorDataset(Xval, Yval), batch_size=batch_size, shuffle=shuffle)
+        else:
+            train_loader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=shuffle)
+            valid_loader = None
+        self.fit_loader(n_epochs, train_loader, valid_data=valid_loader)
 
+    def predict(self, Xin, batch_size=10):
+        dloader = DataLoader(TensorDataset(Xin, Xin), batch_size=batch_size, shuffle=False)
+        return self.predict_loader(dloader)
+
+    def evaluate(self, Xin, Yin, metrics=None, batch_size=10):
+        dloader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=False)
+        return self.evaluate_loader(dloader, metrics)
+
+    def fit_loader(self, n_epochs, train_data, valid_data=None):
         self.has_validation = valid_data is not None
-
         try:
             mb_metrics = dict()
-
             for cb in self.callbacks:
                 cb.on_train_begin(n_epochs)
-                
+
             # for each epoch
             for i in range(self.last_epoch + 1, self.last_epoch + n_epochs + 1):
-                
+
                 # training phase
                 # ==============
                 for cb in self.callbacks:
                     cb.on_epoch_begin(i)
-                    
+
                 epo_samp = 0
                 epo_loss = 0
                 epo_metrics = dict([(n, 0) for n in self.compute_metric.keys()])
@@ -69,7 +96,7 @@ class DeepNetTrainer(object):
 
                 # for each minibatch
                 for ii, (X, Y) in enumerate(train_data):
-                    
+
                     for cb in self.callbacks:
                         cb.on_batch_begin(i, ii)
 
@@ -86,17 +113,17 @@ class DeepNetTrainer(object):
                     self.optimizer.step()
 
                     mb_metrics['loss'] = loss.data.cpu().numpy()
-                        
+
                     epo_loss += mb_metrics['loss']
                     epo_samp += 1
 
                     for name, fun in self.compute_metric.items():
                         mb_metrics[name] = fun(Ypred, Y)
                         epo_metrics[name] += mb_metrics[name]
-                    
+
                     for cb in self.callbacks:
                         cb.on_batch_end(i, ii, mb_metrics)
-                    
+
                 # end of training minibatches
                 eloss = float(epo_loss / epo_samp)
                 self.metrics['train']['losses'].append(eloss)
@@ -104,16 +131,16 @@ class DeepNetTrainer(object):
                 for name, fun in self.compute_metric.items():
                     metric = float(epo_metrics[name] / epo_samp)
                     self.metrics['train'][name].append(metric)
-                        
+
                 # validation phase
                 # ================
                 if self.has_validation:
                     epo_samp = 0
                     epo_loss = 0
                     epo_metrics = dict([(n, 0) for n in self.compute_metric.keys()])
-                    
+
                     self.model.train(False)
-                    
+
                     # for each minibatch
                     for ii, (X, Y) in enumerate(valid_data):
                         if self.use_gpu:
@@ -130,96 +157,40 @@ class DeepNetTrainer(object):
                         for name, fun in self.compute_metric.items():
                             metric = fun(Ypred, Y)
                             epo_metrics[name] += metric
-                    
+
                     #end minibatches
                     eloss = float(epo_loss / epo_samp)
                     self.metrics['valid']['losses'].append(eloss)
-                    
+
                     for name, fun in self.compute_metric.items():
                         metric = float(epo_metrics[name] / epo_samp)
                         self.metrics['valid'][name].append(metric)
-                
+
                 else:
                     self.metrics['valid']['losses'].append(None)
                     for name, fun in self.compute_metric.items():
                         self.metrics['valid'][name].append(None)
-                        
+
                 for cb in self.callbacks:
                     cb.on_epoch_end(i, self.metrics)
 
         except KeyboardInterrupt:
             pass
-            
+
         for cb in self.callbacks:
             cb.on_train_end(n_epochs, self.metrics)
-
-    def predict(self, Xin):
-        predictions = []
-        try:
-            self.model.train(False)  # Set model to evaluate mode
-            ii_n = Xin.size(0)
-            for ii, image in enumerate(Xin):
-                if self.use_gpu:
-                    image = Variable(image.cuda())
-                else:
-                    image = Variable(image)
-                outputs = self.model.forward(image)
-                predictions.append(outputs.data.cpu())
-                print('\rpredict: {}/{}'.format(ii, ii_n - 1), end='')
-            print(' ok')
-
-        except KeyboardInterrupt:
-            print(' interrupted!')
-
-        finally:
-            if len(predictions) > 0:
-                return torch.cat(predictions, 0)
-
-    def evaluate(self, Xin, yin, metrics=None):
-        n_batches = 0
-        epo_metrics = {}
-        try:
-            if metrics is None:
-                metric_dict = self.compute_metric
-            else:
-                metric_dict = metrics
-            for name in metric_dict.keys():
-                epo_metrics[name] = 0
-            self.model.train(False)
-            ii_n = Xin.size(0)
-            for ii, (X, Y) in enumerate(zip(Xin, yin)):
-                if self.use_gpu:
-                    X, Y = Variable(X.cuda()), Variable(Y.cuda())
-                else:
-                    X, Y = Variable(X), Variable(Y)
-                Ypred = self.model.forward(X)
-                for name, fun in metric_dict.items():
-                    vmetric = fun(Ypred, Y)
-                    epo_metrics[name] += vmetric
-                n_batches += 1
-                print('\revaluate: {}/{}'.format(ii, ii_n - 1), end='')
-            print(' ok')
-
-        except KeyboardInterrupt:
-            print(' interrupted!')
-
-        finally:
-            if n_batches > 0:
-                for name in epo_metrics.keys():
-                    epo_metrics[name] /= n_batches
-                return epo_metrics
 
     def predict_loader(self, data_loader):
         predictions = []
         try:
             self.model.train(False)  # Set model to evaluate mode
             ii_n = len(data_loader)
-            for ii, (image, labels) in enumerate(data_loader):
+            for ii, (X, _) in enumerate(data_loader):
                 if self.use_gpu:
-                    image = Variable(image.cuda())
+                    X = Variable(X.cuda())
                 else:
-                    image = Variable(image)
-                outputs = self.model.forward(image)
+                    X = Variable(X)
+                outputs = self.model.forward(X)
                 predictions.append(outputs.data.cpu())
                 print('\rpredict: {}/{}'.format(ii, ii_n - 1), end='')
             print(' ok')
