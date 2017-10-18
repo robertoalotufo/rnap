@@ -74,7 +74,9 @@ class DeepNetTrainer(object):
     def fit_loader(self, n_epochs, train_data, valid_data=None):
         self.has_validation = valid_data is not None
         try:
+            # mini-batch metrics
             mb_metrics = dict()
+
             for cb in self.callbacks:
                 cb.on_train_begin(n_epochs)
 
@@ -97,8 +99,10 @@ class DeepNetTrainer(object):
                 # for each minibatch
                 for ii, (X, Y) in enumerate(train_data):
 
+                    mb_size = X.size(0)
+
                     for cb in self.callbacks:
-                        cb.on_batch_begin(i, ii)
+                        cb.on_batch_begin(i, ii, mb_size)
 
                     if self.use_gpu:
                         X, Y = Variable(X.cuda()), Variable(Y.cuda())
@@ -113,9 +117,11 @@ class DeepNetTrainer(object):
                     self.optimizer.step()
 
                     mb_metrics['loss'] = loss.data.cpu().numpy()
+                    if self.criterion.size_average:
+                        mb_metrics['loss'] *= mb_size
 
                     epo_loss += mb_metrics['loss']
-                    epo_samp += 1
+                    epo_samp += mb_size
 
                     for name, fun in self.compute_metric.items():
                         mb_metrics[name] = fun(Ypred, Y)
@@ -143,6 +149,8 @@ class DeepNetTrainer(object):
 
                     # for each minibatch
                     for ii, (X, Y) in enumerate(valid_data):
+                        mb_size = X.size(0)
+
                         if self.use_gpu:
                             X, Y = Variable(X.cuda()), Variable(Y.cuda())
                         else:
@@ -151,8 +159,12 @@ class DeepNetTrainer(object):
                         Ypred = self.model.forward(X)
                         loss = self.criterion(Ypred, Y)
 
+                        vloss = loss.data.cpu().numpy()
+                        if self.criterion.size_average:
+                            vloss *= mb_size
+
                         epo_loss += loss.data.cpu().numpy()
-                        epo_samp += 1
+                        epo_samp += mb_size
 
                         for name, fun in self.compute_metric.items():
                             metric = fun(Ypred, Y)
@@ -264,7 +276,7 @@ class Callback(object):
     def on_epoch_end(self, epoch, metrics):
         pass
     
-    def on_batch_begin(self, epoch, batch):
+    def on_batch_begin(self, epoch, batch, batch_size):
         pass
 
     def on_batch_end(self, epoch, batch, mb_metrics):
