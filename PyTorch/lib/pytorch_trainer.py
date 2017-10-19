@@ -81,14 +81,15 @@ class DeepNetTrainer(object):
                 cb.on_train_begin(n_epochs)
 
             # for each epoch
-            for i in range(self.last_epoch + 1, self.last_epoch + n_epochs + 1):
+            for curr_epoch in range(self.last_epoch + 1, self.last_epoch + n_epochs + 1):
 
                 # training phase
                 # ==============
                 for cb in self.callbacks:
-                    cb.on_epoch_begin(i)
+                    cb.on_epoch_begin(curr_epoch)
 
-                epo_samp = 0
+                epo_samples = 0
+                epo_batches = 0
                 epo_loss = 0
                 epo_metrics = dict([(n, 0) for n in self.compute_metric.keys()])
 
@@ -97,12 +98,14 @@ class DeepNetTrainer(object):
                     self.scheduler.step()
 
                 # for each minibatch
-                for ii, (X, Y) in enumerate(train_data):
+                for curr_batch, (X, Y) in enumerate(train_data):
 
                     mb_size = X.size(0)
+                    epo_samples += mb_size
+                    epo_batches += 1
 
                     for cb in self.callbacks:
-                        cb.on_batch_begin(i, ii, mb_size)
+                        cb.on_batch_begin(curr_epoch, curr_batch, mb_size)
 
                     if self.use_gpu:
                         X, Y = Variable(X.cuda()), Variable(Y.cuda())
@@ -117,39 +120,41 @@ class DeepNetTrainer(object):
                     self.optimizer.step()
 
                     mb_metrics['loss'] = loss.data.cpu().numpy()
-                    if self.criterion.size_average:
-                        mb_metrics['loss'] *= mb_size
-
-                    epo_loss += mb_metrics['loss']
-                    epo_samp += mb_size
+                    if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
+                        epo_loss += mb_size * mb_metrics['loss']
+                    else:
+                        epo_loss += mb_metrics['loss']
 
                     for name, fun in self.compute_metric.items():
                         mb_metrics[name] = fun(Ypred, Y)
                         epo_metrics[name] += mb_metrics[name]
 
                     for cb in self.callbacks:
-                        cb.on_batch_end(i, ii, mb_metrics)
+                        cb.on_batch_end(curr_epoch, curr_batch, mb_size, mb_metrics)
 
                 # end of training minibatches
-                eloss = float(epo_loss / epo_samp)
+                eloss = float(epo_loss / epo_samples)
                 self.metrics['train']['losses'].append(eloss)
 
                 for name, fun in self.compute_metric.items():
-                    metric = float(epo_metrics[name] / epo_samp)
+                    metric = float(epo_metrics[name] / epo_samples)
                     self.metrics['train'][name].append(metric)
 
                 # validation phase
                 # ================
                 if self.has_validation:
-                    epo_samp = 0
+                    epo_samples = 0
+                    epo_batches = 0
                     epo_loss = 0
                     epo_metrics = dict([(n, 0) for n in self.compute_metric.keys()])
 
                     self.model.train(False)
 
                     # for each minibatch
-                    for ii, (X, Y) in enumerate(valid_data):
+                    for curr_batch, (X, Y) in enumerate(valid_data):
                         mb_size = X.size(0)
+                        epo_samples += mb_size
+                        epo_batches += 1
 
                         if self.use_gpu:
                             X, Y = Variable(X.cuda()), Variable(Y.cuda())
@@ -160,22 +165,21 @@ class DeepNetTrainer(object):
                         loss = self.criterion(Ypred, Y)
 
                         vloss = loss.data.cpu().numpy()
-                        if self.criterion.size_average:
-                            vloss *= mb_size
-
-                        epo_loss += loss.data.cpu().numpy()
-                        epo_samp += mb_size
+                        if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
+                            epo_loss += vloss * mb_size
+                        else:
+                            epo_loss += vloss
 
                         for name, fun in self.compute_metric.items():
                             metric = fun(Ypred, Y)
                             epo_metrics[name] += metric
 
                     #end minibatches
-                    eloss = float(epo_loss / epo_samp)
+                    eloss = float(epo_loss / epo_samples)
                     self.metrics['valid']['losses'].append(eloss)
 
                     for name, fun in self.compute_metric.items():
-                        metric = float(epo_metrics[name] / epo_samp)
+                        metric = float(epo_metrics[name] / epo_samples)
                         self.metrics['valid'][name].append(metric)
 
                 else:
@@ -184,7 +188,7 @@ class DeepNetTrainer(object):
                         self.metrics['valid'][name].append(None)
 
                 for cb in self.callbacks:
-                    cb.on_epoch_end(i, self.metrics)
+                    cb.on_epoch_end(curr_epoch, self.metrics)
 
         except KeyboardInterrupt:
             pass
@@ -217,36 +221,65 @@ class DeepNetTrainer(object):
     def evaluate_loader(self, data_loader, metrics=None):
         n_batches = 0
         epo_metrics = {}
+        if metrics is None:
+            metric_dict = self.compute_metric
+        else:
+            metric_dict = metrics
+
+        epo_samples = 0
+        epo_batches = 0
+        epo_loss = 0
+        for name in metric_dict.keys():
+            epo_metrics[name] = 0
+
         try:
-            if metrics is None:
-                metric_dict = self.compute_metric
-            else:
-                metric_dict = metrics
-            for name in metric_dict.keys():
-                epo_metrics[name] = 0
             self.model.train(False)
             ii_n = len(data_loader)
+
             for ii, (X, Y) in enumerate(data_loader):
+                mb_size = X.size(0)
+                epo_samples += mb_size
+                epo_batches += 1
+
                 if self.use_gpu:
                     X, Y = Variable(X.cuda()), Variable(Y.cuda())
                 else:
                     X, Y = Variable(X), Variable(Y)
+
                 Ypred = self.model.forward(X)
+                loss = self.criterion(Ypred, Y)
+
+                vloss = loss.data.cpu().numpy()
+                if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
+                    epo_loss += vloss * mb_size
+                else:
+                    epo_loss += vloss
+
                 for name, fun in metric_dict.items():
                     vmetric = fun(Ypred, Y)
                     epo_metrics[name] += vmetric
-                n_batches += 1
+
                 print('\revaluate: {}/{}'.format(ii, ii_n - 1), end='')
             print(' ok')
 
         except KeyboardInterrupt:
             print(' interrupted!')
 
-        finally:
-            if n_batches > 0:
-                for name in epo_metrics.keys():
-                    epo_metrics[name] /= n_batches
-                return epo_metrics
+        if n_batches > 0:
+            epo_loss /= epo_samples
+            for name in epo_metrics.keys():
+                epo_metrics[name] /= epo_samples
+
+            return epo_loss, epo_metrics
+
+    def load_state(self, file_basename):
+        load_trainer_state(file_basename, self.model, self.metrics)
+
+    def save_state(self, file_basename):
+        save_trainer_state(file_basename, self.model, self.metrics)
+
+    def summary(self):
+        pass
 
 
 def load_trainer_state(file_basename, model, metrics):
@@ -341,40 +374,41 @@ class PrintCallback(Callback):
         self.t0 = time.time()
 
     def on_epoch_end(self, epoch, metrics):
+            is_best = ''
             has_valid = metrics['valid']['losses'][-1] is not None
             has_metrics = len(metrics['train'].keys()) > 1
             etime = time.time() - self.t0
 
-            is_best = ''
-            valid_imin = int(np.argmin(self.trainer.metrics['valid']['losses'])) + 1
-            train_imin = int(np.argmin(self.trainer.metrics['train']['losses'])) + 1
-            if (has_valid and valid_imin == epoch) or (not has_valid and train_imin == epoch):
-                is_best = 'best'
-
-            if has_valid and has_metrics:
-                # validation and metrics
-                mtrc = list(self.trainer.compute_metric.keys())[0]
-                print('{:3d}: {:5.1f}s   T: {:.5f} {:.5f}   V: {:.5f} {:.5f} {}'
-                      .format(epoch, etime,
-                              self.trainer.metrics['train']['losses'][-1],
-                              self.trainer.metrics['train'][mtrc][-1],
-                              self.trainer.metrics['valid']['losses'][-1],
-                              self.trainer.metrics['valid'][mtrc][-1], is_best))
-            elif has_valid:
-                # validation and no metrics
-                print('{:3d}: {:5.1f}s   T: {:.5f}   V: {:.5f} {}'
-                      .format(epoch, etime,
-                              self.trainer.metrics['train']['losses'][-1],
-                              self.trainer.metrics['valid']['losses'][-1], is_best))
-            elif not has_valid and has_metrics:
-                # no validation and metrics
-                mtrc = list(self.trainer.compute_metric.keys())[0]
-                print('{:3d}: {:5.1f}s   T: {:.5f} {:.5f} {}'
-                      .format(epoch, etime,
-                              self.trainer.metrics['train']['losses'][-1],
-                              self.trainer.metrics['train'][mtrc][-1], is_best))
+            if has_valid:
+                if epoch == int(np.argmin(self.trainer.metrics['valid']['losses'])) + 1:
+                    is_best = 'best'
+                if has_metrics:
+                    # validation and metrics
+                    mtrc = list(self.trainer.compute_metric.keys())[0]
+                    print('{:3d}: {:5.1f}s   T: {:.5f} {:.5f}   V: {:.5f} {:.5f} {}'
+                          .format(epoch, etime,
+                                  self.trainer.metrics['train']['losses'][-1],
+                                  self.trainer.metrics['train'][mtrc][-1],
+                                  self.trainer.metrics['valid']['losses'][-1],
+                                  self.trainer.metrics['valid'][mtrc][-1], is_best))
+                else:
+                    # validation and no metrics
+                    print('{:3d}: {:5.1f}s   T: {:.5f}   V: {:.5f} {}'
+                          .format(epoch, etime,
+                                  self.trainer.metrics['train']['losses'][-1],
+                                  self.trainer.metrics['valid']['losses'][-1], is_best))
             else:
-                # no validation and no metrics
-                print('{:3d}: {:5.1f}s   T: {:.5f} {}'
-                      .format(epoch, etime,
-                              self.trainer.metrics['train']['losses'][-1], is_best))
+                if epoch == int(np.argmin(self.trainer.metrics['train']['losses'])) + 1:
+                    is_best = 'best'
+                if has_metrics:
+                    # no validation and metrics
+                    mtrc = list(self.trainer.compute_metric.keys())[0]
+                    print('{:3d}: {:5.1f}s   T: {:.5f} {:.5f} {}'
+                          .format(epoch, etime,
+                                  self.trainer.metrics['train']['losses'][-1],
+                                  self.trainer.metrics['train'][mtrc][-1], is_best))
+                else:
+                    # no validation and no metrics
+                    print('{:3d}: {:5.1f}s   T: {:.5f} {}'
+                          .format(epoch, etime,
+                                  self.trainer.metrics['train']['losses'][-1], is_best))
