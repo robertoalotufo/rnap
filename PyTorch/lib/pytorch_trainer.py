@@ -84,7 +84,7 @@ class DeepNetTrainer(object):
             mb_metrics = dict()
 
             for cb in self.callbacks:
-                cb.on_train_begin(n_epochs)
+                cb.on_train_begin(n_epochs, self.metrics)
 
             # for each epoch
             for curr_epoch in range(self.last_epoch + 1, self.last_epoch + n_epochs + 1):
@@ -92,7 +92,7 @@ class DeepNetTrainer(object):
                 # training phase
                 # ==============
                 for cb in self.callbacks:
-                    cb.on_epoch_begin(curr_epoch)
+                    cb.on_epoch_begin(curr_epoch, self.metrics)
 
                 epo_samples = 0
                 epo_batches = 0
@@ -179,9 +179,6 @@ class DeepNetTrainer(object):
                         else:
                             epo_loss += vloss
 
-                        for cb in self.cbmetrics:
-                            cb.compute_batch_validation_metric(curr_epoch, curr_batch, Ypred, Y, loss)
-
                         for name, fun in self.compute_metric.items():
                             metric = fun(Ypred, Y)
                             epo_metrics[name] += metric
@@ -237,24 +234,27 @@ class DeepNetTrainer(object):
                 return torch.cat(predictions, 0)
 
     def evaluate_loader(self, data_loader, metrics=None):
-        n_batches = 0
         epo_metrics = {}
         if metrics is None:
             metric_dict = self.compute_metric
         else:
             metric_dict = metrics
 
+        metrics = metrics or []
+        my_metrics = dict(train=dict(losses=[]), valid=dict(losses=[]))
+        for cb in metrics:
+            cb.on_train_begin(1, my_metrics)
+            cb.on_epoch_begin(1, my_metrics)
+
         epo_samples = 0
         epo_batches = 0
         epo_loss = 0
-        for name in metric_dict.keys():
-            epo_metrics[name] = 0
 
         try:
             self.model.train(False)
             ii_n = len(data_loader)
 
-            for ii, (X, Y) in enumerate(data_loader):
+            for curr_batch, (X, Y) in enumerate(data_loader):
                 mb_size = X.size(0)
                 epo_samples += mb_size
                 epo_batches += 1
@@ -273,11 +273,10 @@ class DeepNetTrainer(object):
                 else:
                     epo_loss += vloss
 
-                for name, fun in metric_dict.items():
-                    vmetric = fun(Ypred, Y)
-                    epo_metrics[name] += vmetric
+                for cb in metrics:
+                    cb.on_batch_end(1, curr_batch, Ypred, Y, loss)
 
-                print('\revaluate: {}/{}'.format(ii, ii_n - 1), end='')
+                print('\revaluate: {}/{}'.format(curr_batch, ii_n - 1), end='')
             print(' ok')
 
         except KeyboardInterrupt:
@@ -285,11 +284,11 @@ class DeepNetTrainer(object):
 
         if epo_batches > 0:
             epo_loss /= epo_samples
-            epo_metrics['loss'] = epo_loss
-            for name in epo_metrics.keys():
-                epo_metrics[name] /= epo_samples
+            my_metrics['train']['losses'].append(epo_loss)
+            for cb in metrics:
+                cb.on_epoch_end(1, my_metrics)
 
-            return epo_metrics
+        return dict([(k, v[0]) for k, v in my_metrics['train'].items()])
 
     def load_state(self, file_basename):
         load_trainer_state(file_basename, self.model, self.metrics)
@@ -316,13 +315,13 @@ class Callback(object):
     def __init__(self):
         pass
     
-    def on_train_begin(self, n_epochs):
+    def on_train_begin(self, n_epochs, metrics):
         pass
     
     def on_train_end(self, n_epochs, metrics):
         pass
 
-    def on_epoch_begin(self, epoch):
+    def on_epoch_begin(self, epoch, metrics):
         pass
 
     def on_epoch_end(self, epoch, metrics):
@@ -358,7 +357,7 @@ class AccuracyMetric(Callback):
         self.valid_accum += ok
         self.n_valid_samples += y_pred.size(0)
 
-    def on_epoch_begin(self, epoch_num):
+    def on_epoch_begin(self, epoch_num, metrics):
         self.train_accum = 0
         self.valid_accum = 0
         self.n_train_samples = 0
@@ -370,9 +369,9 @@ class AccuracyMetric(Callback):
         if self.n_valid_samples > 0:
             metrics['valid'][self.name].append(1.0 * self.valid_accum / self.n_valid_samples)
 
-    def on_train_begin(self, n_epochs):
-        self.trainer.metrics['train'][self.name] = []
-        self.trainer.metrics['valid'][self.name] = []
+    def on_train_begin(self, n_epochs, metrics):
+        metrics['train'][self.name] = []
+        metrics['valid'][self.name] = []
 
 
 class ModelCheckpoint(Callback):
@@ -384,7 +383,7 @@ class ModelCheckpoint(Callback):
         self.reset = reset
         self.verbose = verbose
 
-    def on_train_begin(self, n_epochs):
+    def on_train_begin(self, n_epochs, metrics):
         if (self.basename is not None) and (not self.reset) and (os.path.isfile(self.basename + '.model')):
             load_trainer_state(self.basename, self.trainer.model, self.trainer.metrics)
             if self.verbose > 0:
@@ -422,14 +421,14 @@ class PrintCallback(Callback):
     def __init__(self):
         super().__init__()
 
-    def on_train_begin(self, n_epochs):
+    def on_train_begin(self, n_epochs, metrics):
         print('Start training for {} epochs'.format(n_epochs))
     
     def on_train_end(self, n_epochs, metrics):
         n_train = len(metrics['train']['losses'])
         print('Stop training at epoch: {}/{}'.format(n_train, self.trainer.last_epoch + n_epochs))
 
-    def on_epoch_begin(self, epoch):
+    def on_epoch_begin(self, epoch, metrics):
         self.t0 = time.time()
 
     def on_epoch_end(self, epoch, metrics):
@@ -472,3 +471,65 @@ class PrintCallback(Callback):
                     print('{:3d}: {:5.1f}s   T: {:.5f} {}'
                           .format(epoch, etime,
                                   metrics['train']['losses'][-1], is_best))
+
+
+import matplotlib.pyplot as plt
+from IPython import display
+
+
+class PlotCallback(Callback):
+    def __init__(self, interval=1, max_loss=None):
+        super().__init__()
+        self.interval = interval
+        self.max_loss = max_loss
+
+    def on_train_begin(self, n_epochs, metrics):
+        self.line_train = None
+        self.line_valid = None
+        self.dot_train = None
+        self.dot_valid = None
+
+        self.fig = plt.figure(figsize=(15, 6))
+        self.ax = self.fig.add_subplot(1, 1, 1)
+        self.ax.grid(True)
+
+        self.plot_losses(self.trainer.metrics['train']['losses'],
+                         self.trainer.metrics['valid']['losses'])
+
+    def on_epoch_end(self, epoch, metrics):
+        if epoch % self.interval == 0:
+            display.clear_output(wait=True)
+            self.plot_losses(self.trainer.metrics['train']['losses'],
+                             self.trainer.metrics['valid']['losses'])
+
+    def plot_losses(self, htrain, hvalid):
+        epoch = len(htrain)
+        if epoch == 0:
+            return
+
+        x = np.arange(1, epoch + 1)
+        if self.line_train:
+            self.line_train.remove()
+        if self.dot_train:
+            self.dot_train.remove()
+        self.line_train, = self.ax.plot(x, htrain, color='#1f77b4', linewidth=2, label='training loss')
+        best_epoch = int(np.argmin(htrain)) + 1
+        best_loss = htrain[best_epoch - 1]
+        self.dot_train = self.ax.scatter(best_epoch, best_loss, c='#1f77b4', marker='o')
+
+        if hvalid[0] is not None:
+            if self.line_valid:
+                self.line_valid.remove()
+            if self.dot_valid:
+                self.dot_valid.remove()
+            self.line_valid, = self.ax.plot(x, hvalid, color='#ff7f0e', linewidth=2, label='validation loss')
+            best_epoch = int(np.argmin(hvalid)) + 1
+            best_loss = hvalid[best_epoch - 1]
+            self.dot_valid = self.ax.scatter(best_epoch, best_loss, c='#ff7f0e', marker='o')
+
+        self.ax.legend()
+        # self.ax.vlines(best_epoch, *self.ax.get_ylim(), colors='#EBDDE2', linestyles='dashed')
+        self.ax.set_title('Best epoch: {}, Current epoch: {}'.format(best_epoch, epoch))
+
+        display.display(self.fig)
+        time.sleep(0.1)
