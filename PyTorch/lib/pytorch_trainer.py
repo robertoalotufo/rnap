@@ -125,21 +125,18 @@ class DeepNetTrainer(object):
                     loss.backward()
                     self.optimizer.step()
 
-                    mb_metrics['loss'] = loss.data.cpu().numpy()
+                    mb_metrics['loss'] = loss.data.cpu()[0]
                     if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
                         epo_loss += mb_size * mb_metrics['loss']
                     else:
                         epo_loss += mb_metrics['loss']
-
-                    for cb in self.cbmetrics:
-                        cb.compute_batch_training_metric(curr_epoch, curr_batch, Ypred, Y)
 
                     for name, fun in self.compute_metric.items():
                         mb_metrics[name] = fun(Ypred, Y)
                         epo_metrics[name] += mb_metrics[name]
 
                     for cb in self.callbacks:
-                        cb.on_batch_end(curr_epoch, curr_batch, mb_size, mb_metrics)
+                        cb.on_batch_end(curr_epoch, curr_batch, Ypred, Y, loss)
 
                 # end of training minibatches
                 eloss = float(epo_loss / epo_samples)
@@ -165,6 +162,9 @@ class DeepNetTrainer(object):
                         epo_samples += mb_size
                         epo_batches += 1
 
+                        for cb in self.callbacks:
+                            cb.on_vbatch_begin(curr_epoch, curr_batch, mb_size)
+
                         if self.use_gpu:
                             X, Y = Variable(X.cuda()), Variable(Y.cuda())
                         else:
@@ -173,18 +173,21 @@ class DeepNetTrainer(object):
                         Ypred = self.model.forward(X)
                         loss = self.criterion(Ypred, Y)
 
-                        vloss = loss.data.cpu().numpy()
+                        vloss = loss.data.cpu()[0]
                         if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
                             epo_loss += vloss * mb_size
                         else:
                             epo_loss += vloss
 
                         for cb in self.cbmetrics:
-                            cb.compute_batch_validation_metric(curr_epoch, curr_batch, Ypred, Y)
+                            cb.compute_batch_validation_metric(curr_epoch, curr_batch, Ypred, Y, loss)
 
                         for name, fun in self.compute_metric.items():
                             metric = fun(Ypred, Y)
                             epo_metrics[name] += metric
+
+                        for cb in self.callbacks:
+                            cb.on_vbatch_end(curr_epoch, curr_batch, Ypred, Y, loss)
 
                     #end minibatches
                     eloss = float(epo_loss / epo_samples)
@@ -264,7 +267,7 @@ class DeepNetTrainer(object):
                 Ypred = self.model.forward(X)
                 loss = self.criterion(Ypred, Y)
 
-                vloss = loss.data.cpu().numpy()
+                vloss = loss.data.cpu()[0]
                 if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
                     epo_loss += vloss * mb_size
                 else:
@@ -280,12 +283,13 @@ class DeepNetTrainer(object):
         except KeyboardInterrupt:
             print(' interrupted!')
 
-        if n_batches > 0:
+        if epo_batches > 0:
             epo_loss /= epo_samples
+            epo_metrics['loss'] = epo_loss
             for name in epo_metrics.keys():
                 epo_metrics[name] /= epo_samples
 
-            return epo_loss, epo_metrics
+            return epo_metrics
 
     def load_state(self, file_basename):
         load_trainer_state(file_basename, self.model, self.metrics)
@@ -308,56 +312,6 @@ def save_trainer_state(file_basename, model, metrics):
     pickle.dump(metrics, open(file_basename + '.histo', 'wb'))
 
 
-class MetricCallback(object):
-    def __init__(self):
-        pass
-
-    def reset_metrics(self):
-        pass
-
-    def compute_batch_training_metric(self, epoch_num, batch_num, y_pred, y_true):
-        pass
-
-    def compute_batch_validation_metric(self, epoch_num, batch_num, y_pred, y_true):
-        pass
-
-    def compute_epoch_metrics(self, epoch_num):
-        pass
-
-
-class AccuracyMetric(MetricCallback):
-    def __init__(self):
-        super().__init__()
-        self.name = 'accuracy'
-        self.reset_metrics()
-
-    def reset_metrics(self):
-        self.train_accum = 0
-        self.valid_accum = 0
-        self.n_train_samples = 0
-        self.n_valid_samples = 0
-
-    def compute_batch_training_metric(self, epoch_num, batch_num, y_pred, y_true):
-        _, preds = torch.max(y_pred.data, 1)
-        self.train_accum += (preds == y_true.data).type(torch.FloatTensor).sum()
-        self.n_train_samples += y_pred.size(0)
-
-    def compute_batch_validation_metric(self, epoch_num, batch_num, y_pred, y_true):
-        _, preds = torch.max(y_pred.data, 1)
-        self.valid_accum += (preds == y_true.data).type(torch.FloatTensor).sum()
-        self.n_valid_samples += y_pred.size(0)
-
-    def compute_epoch_metrics(self, epoch_num):
-        if epoch_num == 1:
-            self.trainer.metrics['train'][self.name] = []
-            self.trainer.metrics['valid'][self.name] = []
-        if self.n_train_samples > 0:
-            self.trainer.metrics['train'][self.name].append(1.0 * self.train_accum / self.n_train_samples)
-        if self.n_valid_samples > 0:
-            self.trainer.metrics['valid'][self.name].append(1.0 * self.valid_accum / self.n_valid_samples)
-        self.reset_metrics()
-
-
 class Callback(object):
     def __init__(self):
         pass
@@ -374,11 +328,51 @@ class Callback(object):
     def on_epoch_end(self, epoch, metrics):
         pass
     
-    def on_batch_begin(self, epoch, batch, batch_size):
+    def on_batch_begin(self, epoch, batch, mb_size):
         pass
 
-    def on_batch_end(self, epoch, batch, mb_metrics):
+    def on_batch_end(self, epoch, batch, y_pred, y_true, loss):
         pass
+
+    def on_vbatch_begin(self, epoch, batch, mb_size):
+        pass
+
+    def on_vbatch_end(self, epoch, batch, y_pred, y_true, loss):
+        pass
+
+
+class AccuracyMetric(Callback):
+    def __init__(self):
+        super().__init__()
+        self.name = 'acc'
+
+    def on_batch_end(self, epoch_num, batch_num, y_pred, y_true, loss):
+        _, preds = torch.max(y_pred.data, 1)
+        ok = (preds == y_true.data).sum()
+        self.train_accum += ok
+        self.n_train_samples += y_pred.size(0)
+
+    def on_vbatch_end(self, epoch_num, batch_num, y_pred, y_true, loss):
+        _, preds = torch.max(y_pred.data, 1)
+        ok = (preds == y_true.data).sum()
+        self.valid_accum += ok
+        self.n_valid_samples += y_pred.size(0)
+
+    def on_epoch_begin(self, epoch_num):
+        self.train_accum = 0
+        self.valid_accum = 0
+        self.n_train_samples = 0
+        self.n_valid_samples = 0
+
+    def on_epoch_end(self, epoch_num, metrics):
+        if self.n_train_samples > 0:
+            metrics['train'][self.name].append(1.0 * self.train_accum / self.n_train_samples)
+        if self.n_valid_samples > 0:
+            metrics['valid'][self.name].append(1.0 * self.valid_accum / self.n_valid_samples)
+
+    def on_train_begin(self, n_epochs):
+        self.trainer.metrics['train'][self.name] = []
+        self.trainer.metrics['valid'][self.name] = []
 
 
 class ModelCheckpoint(Callback):
@@ -440,40 +434,41 @@ class PrintCallback(Callback):
 
     def on_epoch_end(self, epoch, metrics):
             is_best = ''
-            has_valid = metrics['valid']['losses'][-1] is not None
+            has_valid = len(metrics['valid']['losses']) > 0 and metrics['valid']['losses'][0] is not None
             has_metrics = len(metrics['train'].keys()) > 1
             etime = time.time() - self.t0
 
             if has_valid:
-                if epoch == int(np.argmin(self.trainer.metrics['valid']['losses'])) + 1:
+                if epoch == int(np.argmin(metrics['valid']['losses'])) + 1:
                     is_best = 'best'
                 if has_metrics:
                     # validation and metrics
-                    mtrc = list(self.trainer.compute_metric.keys())[0]
+                    metric_name = [mn for mn in metrics['valid'].keys() if mn != 'losses'][0]
+                    # metric_name = list(self.trainer.compute_metric.keys())[0]
                     print('{:3d}: {:5.1f}s   T: {:.5f} {:.5f}   V: {:.5f} {:.5f} {}'
                           .format(epoch, etime,
-                                  self.trainer.metrics['train']['losses'][-1],
-                                  self.trainer.metrics['train'][mtrc][-1],
-                                  self.trainer.metrics['valid']['losses'][-1],
-                                  self.trainer.metrics['valid'][mtrc][-1], is_best))
+                                  metrics['train']['losses'][-1],
+                                  metrics['train'][metric_name][-1],
+                                  metrics['valid']['losses'][-1],
+                                  metrics['valid'][metric_name][-1], is_best))
                 else:
                     # validation and no metrics
                     print('{:3d}: {:5.1f}s   T: {:.5f}   V: {:.5f} {}'
                           .format(epoch, etime,
-                                  self.trainer.metrics['train']['losses'][-1],
-                                  self.trainer.metrics['valid']['losses'][-1], is_best))
+                                  metrics['train']['losses'][-1],
+                                  metrics['valid']['losses'][-1], is_best))
             else:
-                if epoch == int(np.argmin(self.trainer.metrics['train']['losses'])) + 1:
+                if epoch == int(np.argmin(metrics['train']['losses'])) + 1:
                     is_best = 'best'
                 if has_metrics:
                     # no validation and metrics
-                    mtrc = list(self.trainer.compute_metric.keys())[0]
+                    metric_name = list(self.trainer.compute_metric.keys())[0]
                     print('{:3d}: {:5.1f}s   T: {:.5f} {:.5f} {}'
                           .format(epoch, etime,
-                                  self.trainer.metrics['train']['losses'][-1],
-                                  self.trainer.metrics['train'][mtrc][-1], is_best))
+                                  metrics['train']['losses'][-1],
+                                  metrics['train'][metric_name][-1], is_best))
                 else:
                     # no validation and no metrics
                     print('{:3d}: {:5.1f}s   T: {:.5f} {}'
                           .format(epoch, etime,
-                                  self.trainer.metrics['train']['losses'][-1], is_best))
+                                  metrics['train']['losses'][-1], is_best))
