@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 class DeepNetTrainer(object):
     
     def __init__(self, model=None, criterion=None, metrics=None, optimizer=None, lr_scheduler=None,
-                 callbacks=None, use_gpu='auto'):
+                 callbacks=None, cbmetrics=None, use_gpu='auto'):
         
         assert (model is not None) and (criterion is not None) and (optimizer is not None)
         self.model = model
@@ -35,7 +35,13 @@ class DeepNetTrainer(object):
             for cb in callbacks:
                 self.callbacks.append(cb)
                 cb.trainer = self
-        
+
+        self.cbmetrics = []
+        if cbmetrics is not None:
+            for cb in cbmetrics:
+                self.cbmetrics.append(cb)
+                cb.trainer = self
+
         self.use_gpu = use_gpu
         if use_gpu == 'auto':
             self.use_gpu = torch.cuda.is_available()
@@ -125,6 +131,9 @@ class DeepNetTrainer(object):
                     else:
                         epo_loss += mb_metrics['loss']
 
+                    for cb in self.cbmetrics:
+                        cb.compute_batch_training_metric(curr_epoch, curr_batch, Ypred, Y)
+
                     for name, fun in self.compute_metric.items():
                         mb_metrics[name] = fun(Ypred, Y)
                         epo_metrics[name] += mb_metrics[name]
@@ -170,6 +179,9 @@ class DeepNetTrainer(object):
                         else:
                             epo_loss += vloss
 
+                        for cb in self.cbmetrics:
+                            cb.compute_batch_validation_metric(curr_epoch, curr_batch, Ypred, Y)
+
                         for name, fun in self.compute_metric.items():
                             metric = fun(Ypred, Y)
                             epo_metrics[name] += metric
@@ -186,6 +198,9 @@ class DeepNetTrainer(object):
                     self.metrics['valid']['losses'].append(None)
                     for name, fun in self.compute_metric.items():
                         self.metrics['valid'][name].append(None)
+
+                for cb in self.cbmetrics:
+                    cb.compute_epoch_metrics(curr_epoch)
 
                 for cb in self.callbacks:
                     cb.on_epoch_end(curr_epoch, self.metrics)
@@ -291,6 +306,56 @@ def load_trainer_state(file_basename, model, metrics):
 def save_trainer_state(file_basename, model, metrics):
     torch.save(model.state_dict(), file_basename + '.model')
     pickle.dump(metrics, open(file_basename + '.histo', 'wb'))
+
+
+class MetricCallback(object):
+    def __init__(self):
+        pass
+
+    def reset_metrics(self):
+        pass
+
+    def compute_batch_training_metric(self, epoch_num, batch_num, y_pred, y_true):
+        pass
+
+    def compute_batch_validation_metric(self, epoch_num, batch_num, y_pred, y_true):
+        pass
+
+    def compute_epoch_metrics(self, epoch_num):
+        pass
+
+
+class AccuracyMetric(MetricCallback):
+    def __init__(self):
+        super().__init__()
+        self.name = 'accuracy'
+        self.reset_metrics()
+
+    def reset_metrics(self):
+        self.train_accum = 0
+        self.valid_accum = 0
+        self.n_train_samples = 0
+        self.n_valid_samples = 0
+
+    def compute_batch_training_metric(self, epoch_num, batch_num, y_pred, y_true):
+        _, preds = torch.max(y_pred.data, 1)
+        self.train_accum += (preds == y_true.data).type(torch.FloatTensor).sum()
+        self.n_train_samples += y_pred.size(0)
+
+    def compute_batch_validation_metric(self, epoch_num, batch_num, y_pred, y_true):
+        _, preds = torch.max(y_pred.data, 1)
+        self.valid_accum += (preds == y_true.data).type(torch.FloatTensor).sum()
+        self.n_valid_samples += y_pred.size(0)
+
+    def compute_epoch_metrics(self, epoch_num):
+        if epoch_num == 1:
+            self.trainer.metrics['train'][self.name] = []
+            self.trainer.metrics['valid'][self.name] = []
+        if self.n_train_samples > 0:
+            self.trainer.metrics['train'][self.name].append(1.0 * self.train_accum / self.n_train_samples)
+        if self.n_valid_samples > 0:
+            self.trainer.metrics['valid'][self.name].append(1.0 * self.valid_accum / self.n_valid_samples)
+        self.reset_metrics()
 
 
 class Callback(object):
