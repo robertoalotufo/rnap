@@ -228,6 +228,16 @@ class DeepNetTrainer(object):
             Xin = Xin.cuda()
         return predict(self.model, Xin)
 
+    def predict_classes(self, Xin):
+        if self.use_gpu:
+            Xin = Xin.cuda()
+        return predict_classes(self.model, Xin)
+
+    def predict_probas(self, Xin):
+        if self.use_gpu:
+            Xin = Xin.cuda()
+        return predict_probas(self.model, Xin)
+
     def summary(self):
         pass
 
