@@ -8,12 +8,12 @@ import torch
 from torch.autograd import Variable
 from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 
 class DeepNetTrainer(object):
     
-    def __init__(self, model=None, criterion=None, metrics=None, optimizer=None, lr_scheduler=None,
-                 callbacks=None, cbmetrics=None, use_gpu='auto'):
+    def __init__(self, model=None, criterion=None, optimizer=None, lr_scheduler=None, callbacks=None, use_gpu='auto'):
         
         assert (model is not None) and (criterion is not None) and (optimizer is not None)
         self.model = model
@@ -21,25 +21,12 @@ class DeepNetTrainer(object):
         self.optimizer = optimizer
         self.scheduler = lr_scheduler
         self.metrics = dict(train=dict(losses=[]), valid=dict(losses=[]))
-        self.compute_metric = dict()
         self.last_epoch = 0
         
-        if metrics is not None:
-            for name, funct in metrics.items():
-                self.metrics['train'][name] = []
-                self.metrics['valid'][name] = []
-                self.compute_metric[name] = funct
-
         self.callbacks = []
         if callbacks is not None:
             for cb in callbacks:
                 self.callbacks.append(cb)
-                cb.trainer = self
-
-        self.cbmetrics = []
-        if cbmetrics is not None:
-            for cb in cbmetrics:
-                self.cbmetrics.append(cb)
                 cb.trainer = self
 
         self.use_gpu = use_gpu
@@ -49,11 +36,6 @@ class DeepNetTrainer(object):
         if self.use_gpu:
             self.model.cuda()
 
-    def _make_loader(self, Xin, yin, batch_size=10, shuffle=True):
-        n_samples = Xin.size(0)
-        n_batches = np.ceil(n_samples / batch_size)
-        return self
-        
     def fit(self, n_epochs, Xin, Yin, valid_data=None, valid_split=None, batch_size=10, shuffle=True):
         if valid_data is not None:
             train_loader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=shuffle)
@@ -68,10 +50,6 @@ class DeepNetTrainer(object):
             train_loader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=shuffle)
             valid_loader = None
         self.fit_loader(n_epochs, train_loader, valid_data=valid_loader)
-
-    def predict(self, Xin, batch_size=10):
-        dloader = DataLoader(TensorDataset(Xin, Xin), batch_size=batch_size, shuffle=False)
-        return self.predict_loader(dloader)
 
     def evaluate(self, Xin, Yin, metrics=None, batch_size=10):
         dloader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=False)
@@ -97,7 +75,6 @@ class DeepNetTrainer(object):
                 epo_samples = 0
                 epo_batches = 0
                 epo_loss = 0
-                epo_metrics = dict([(n, 0) for n in self.compute_metric.keys()])
 
                 self.model.train(True)
                 if self.scheduler is not None:
@@ -125,15 +102,11 @@ class DeepNetTrainer(object):
                     loss.backward()
                     self.optimizer.step()
 
-                    mb_metrics['loss'] = loss.data.cpu()[0]
+                    vloss = loss.data.cpu()[0]
                     if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
-                        epo_loss += mb_size * mb_metrics['loss']
+                        epo_loss += mb_size * vloss
                     else:
-                        epo_loss += mb_metrics['loss']
-
-                    for name, fun in self.compute_metric.items():
-                        mb_metrics[name] = fun(Ypred, Y)
-                        epo_metrics[name] += mb_metrics[name]
+                        epo_loss += vloss
 
                     for cb in self.callbacks:
                         cb.on_batch_end(curr_epoch, curr_batch, Ypred, Y, loss)
@@ -142,17 +115,12 @@ class DeepNetTrainer(object):
                 eloss = float(epo_loss / epo_samples)
                 self.metrics['train']['losses'].append(eloss)
 
-                for name, fun in self.compute_metric.items():
-                    metric = float(epo_metrics[name] / epo_samples)
-                    self.metrics['train'][name].append(metric)
-
                 # validation phase
                 # ================
                 if self.has_validation:
                     epo_samples = 0
                     epo_batches = 0
                     epo_loss = 0
-                    epo_metrics = dict([(n, 0) for n in self.compute_metric.keys()])
 
                     self.model.train(False)
 
@@ -179,10 +147,6 @@ class DeepNetTrainer(object):
                         else:
                             epo_loss += vloss
 
-                        for name, fun in self.compute_metric.items():
-                            metric = fun(Ypred, Y)
-                            epo_metrics[name] += metric
-
                         for cb in self.callbacks:
                             cb.on_vbatch_end(curr_epoch, curr_batch, Ypred, Y, loss)
 
@@ -190,17 +154,8 @@ class DeepNetTrainer(object):
                     eloss = float(epo_loss / epo_samples)
                     self.metrics['valid']['losses'].append(eloss)
 
-                    for name, fun in self.compute_metric.items():
-                        metric = float(epo_metrics[name] / epo_samples)
-                        self.metrics['valid'][name].append(metric)
-
                 else:
                     self.metrics['valid']['losses'].append(None)
-                    for name, fun in self.compute_metric.items():
-                        self.metrics['valid'][name].append(None)
-
-                for cb in self.cbmetrics:
-                    cb.compute_epoch_metrics(curr_epoch)
 
                 for cb in self.callbacks:
                     cb.on_epoch_end(curr_epoch, self.metrics)
@@ -211,35 +166,7 @@ class DeepNetTrainer(object):
         for cb in self.callbacks:
             cb.on_train_end(n_epochs, self.metrics)
 
-    def predict_loader(self, data_loader):
-        predictions = []
-        try:
-            self.model.train(False)  # Set model to evaluate mode
-            ii_n = len(data_loader)
-            for ii, (X, _) in enumerate(data_loader):
-                if self.use_gpu:
-                    X = Variable(X.cuda())
-                else:
-                    X = Variable(X)
-                outputs = self.model.forward(X)
-                predictions.append(outputs.data.cpu())
-                print('\rpredict: {}/{}'.format(ii, ii_n - 1), end='')
-            print(' ok')
-
-        except KeyboardInterrupt:
-            print(' interrupted!')
-
-        finally:
-            if len(predictions) > 0:
-                return torch.cat(predictions, 0)
-
     def evaluate_loader(self, data_loader, metrics=None):
-        epo_metrics = {}
-        if metrics is None:
-            metric_dict = self.compute_metric
-        else:
-            metric_dict = metrics
-
         metrics = metrics or []
         my_metrics = dict(train=dict(losses=[]), valid=dict(losses=[]))
         for cb in metrics:
@@ -296,6 +223,11 @@ class DeepNetTrainer(object):
     def save_state(self, file_basename):
         save_trainer_state(file_basename, self.model, self.metrics)
 
+    def predict(self, Xin):
+        if self.use_gpu:
+            Xin = Xin.cuda()
+        return predict(self.model, Xin)
+
     def summary(self):
         pass
 
@@ -309,6 +241,23 @@ def load_trainer_state(file_basename, model, metrics):
 def save_trainer_state(file_basename, model, metrics):
     torch.save(model.state_dict(), file_basename + '.model')
     pickle.dump(metrics, open(file_basename + '.histo', 'wb'))
+
+
+def predict(model, Xin):
+    y_pred = model.forward(Variable(Xin))
+    return y_pred.data
+
+
+def predict_classes(model, Xin):
+    y_pred = predict(model, Xin)
+    _, pred = torch.max(y_pred, 1)
+    return pred
+
+
+def predict_probas(model, Xin):
+    y_pred = predict(model, Xin)
+    probas = F.softmax(y_pred)
+    return probas
 
 
 class Callback(object):
