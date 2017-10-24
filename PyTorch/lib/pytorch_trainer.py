@@ -10,11 +10,14 @@ from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 
+import matplotlib.pyplot as plt
+from IPython import display
+
 
 class DeepNetTrainer(object):
-    
+
     def __init__(self, model=None, criterion=None, optimizer=None, lr_scheduler=None, callbacks=None, use_gpu='auto'):
-        
+
         assert (model is not None) and (criterion is not None) and (optimizer is not None)
         self.model = model
         self.criterion = criterion
@@ -22,7 +25,7 @@ class DeepNetTrainer(object):
         self.scheduler = lr_scheduler
         self.metrics = dict(train=dict(losses=[]), valid=dict(losses=[]))
         self.last_epoch = 0
-        
+
         self.callbacks = []
         if callbacks is not None:
             for cb in callbacks:
@@ -51,6 +54,10 @@ class DeepNetTrainer(object):
             valid_loader = None
         self.fit_loader(n_epochs, train_loader, valid_data=valid_loader)
 
+    def score(self, Xin, Yin, batch_size=10):
+        dloader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=False)
+        return self.score_loader(dloader)
+
     def evaluate(self, Xin, Yin, metrics=None, batch_size=10):
         dloader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=False)
         return self.evaluate_loader(dloader, metrics)
@@ -58,9 +65,6 @@ class DeepNetTrainer(object):
     def fit_loader(self, n_epochs, train_data, valid_data=None):
         self.has_validation = valid_data is not None
         try:
-            # mini-batch metrics
-            mb_metrics = dict()
-
             for cb in self.callbacks:
                 cb.on_train_begin(n_epochs, self.metrics)
 
@@ -150,7 +154,7 @@ class DeepNetTrainer(object):
                         for cb in self.callbacks:
                             cb.on_vbatch_end(curr_epoch, curr_batch, Ypred, Y, loss)
 
-                    #end minibatches
+                    # end minibatches
                     eloss = float(epo_loss / epo_samples)
                     self.metrics['valid']['losses'].append(eloss)
 
@@ -165,6 +169,28 @@ class DeepNetTrainer(object):
 
         for cb in self.callbacks:
             cb.on_train_end(n_epochs, self.metrics)
+
+    def score_loader(self, data_loader):
+        epo_samples = 0
+        epo_loss = 0
+        self.model.train(False)
+        for curr_batch, (X, Y) in enumerate(data_loader):
+            mb_size = X.size(0)
+            epo_samples += mb_size
+            if self.use_gpu:
+                X, Y = Variable(X.cuda()), Variable(Y.cuda())
+            else:
+                X, Y = Variable(X), Variable(Y)
+            Ypred = self.model.forward(X)
+            loss = self.criterion(Ypred, Y)
+            vloss = loss.data.cpu()[0]
+            if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
+                epo_loss += vloss * mb_size
+            else:
+                epo_loss += vloss
+        epo_loss /= epo_samples
+        # higher score is better
+        return -epo_loss
 
     def evaluate_loader(self, data_loader, metrics=None):
         metrics = metrics or []
@@ -273,10 +299,10 @@ def predict_probas(model, Xin):
 class Callback(object):
     def __init__(self):
         pass
-    
+
     def on_train_begin(self, n_epochs, metrics):
         pass
-    
+
     def on_train_end(self, n_epochs, metrics):
         pass
 
@@ -285,7 +311,7 @@ class Callback(object):
 
     def on_epoch_end(self, epoch, metrics):
         pass
-    
+
     def on_batch_begin(self, epoch, batch, mb_size):
         pass
 
@@ -356,12 +382,12 @@ class ModelCheckpoint(Callback):
         self.best_epoch = self.trainer.last_epoch
         self.best_loss = 1e10
         if self.trainer.last_epoch > 0:
-            self.best_loss = self.trainer.metrics['valid']['losses'][-1] or \
-                             self.trainer.metrics['train']['losses'][-1]
-            
+            self.best_loss = self.trainer.metrics['valid']['losses'][-1] or self.trainer.metrics['train']['losses'][-1]
+
     def on_train_end(self, n_epochs, metrics):
-        print('Best model was saved at epoch {} with loss {:.5f}: {}'
-              .format(self.best_epoch, self.best_loss, self.basename))
+        if self.verbose > 0:
+            print('Best model was saved at epoch {} with loss {:.5f}: {}'
+                  .format(self.best_epoch, self.best_loss, self.basename))
 
     def on_epoch_end(self, epoch, metrics):
         eloss = metrics['valid']['losses'][-1] or metrics['train']['losses'][-1]
@@ -382,7 +408,7 @@ class PrintCallback(Callback):
 
     def on_train_begin(self, n_epochs, metrics):
         print('Start training for {} epochs'.format(n_epochs))
-    
+
     def on_train_end(self, n_epochs, metrics):
         n_train = len(metrics['train']['losses'])
         print('Stop training at epoch: {}/{}'.format(n_train, self.trainer.last_epoch + n_epochs))
@@ -430,10 +456,6 @@ class PrintCallback(Callback):
                     print('{:3d}: {:5.1f}s   T: {:.5f} {}'
                           .format(epoch, etime,
                                   metrics['train']['losses'][-1], is_best))
-
-
-import matplotlib.pyplot as plt
-from IPython import display
 
 
 class PlotCallback(Callback):

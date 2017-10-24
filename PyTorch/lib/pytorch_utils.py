@@ -6,9 +6,10 @@ import torch
 import numpy as np
 from torch.autograd import Variable
 
+
 class DeepNetTrainer:
-    
-    def __init__(self, file_basename=None, model=None, criterion=None, metrics=None, 
+
+    def __init__(self, file_basename=None, model=None, criterion=None, metrics=None,
                  optimizer=None, lr_scheduler=None, callbacks=[], reset=False):
         assert (model is not None) and (criterion is not None) and (optimizer is not None)
         self.basename = file_basename
@@ -19,36 +20,35 @@ class DeepNetTrainer:
         self.metrics = dict(train=dict(losses=[]), valid=dict(losses=[]))
         self.compute_metric = dict()
         self.callbacks = callbacks
-        
+
         if metrics is not None:
             for name, funct in metrics.items():
                 self.metrics['train'][name] = []
                 self.metrics['valid'][name] = []
                 self.compute_metric[name] = funct
-        
+
         if (self.basename is not None) and (not reset) and (os.path.isfile(self.basename + '.model')):
             self.load_trainer_state(self.basename, self.model, self.optimizer, self.metrics)
             print('Model loaded from', self.basename + '.model')
-            
+
         self.last_epoch = len(self.metrics['train']['losses'])
         if self.scheduler is not None:
             self.scheduler.last_epoch = self.last_epoch
-            
+
     def fit(self, n_epochs, train_data, valid_data=None, use_gpu='auto'):
         data = dict(train=train_data, valid=valid_data)
         if valid_data is None:
             phases = [('train', True)]
         else:
             phases = [('train', True), ('valid', False)]
-     
+
         if use_gpu == 'auto':
             use_gpu = torch.cuda.is_available()
-        assert use_gpu == False or use_gpu == True
-            
+        assert not use_gpu or use_gpu
+
         try:
             print('Starting training for {} epochs\n'.format(n_epochs))
-            
-            best_model = copy.deepcopy(self.model)
+
             best_epoch = self.last_epoch
             best_loss = 1e10
             if self.last_epoch > 0:
@@ -57,22 +57,22 @@ class DeepNetTrainer:
 
             for cb in self.callbacks:
                 cb.on_train_begin(self, has_validation=(valid_data is not None))
-                
+
             # for each epoch
             for i in range(self.last_epoch + 1, self.last_epoch + n_epochs + 1):
                 t0 = time.time()
-                
+
                 # for training and evaluating
                 for phase, is_train in phases:
-                
+
                     epo_samp = 0
                     epo_loss = 0
                     epo_metrics = dict([(n, 0) for n in self.compute_metric.keys()])
-                    
+
                     self.model.train(is_train)
                     if is_train and self.scheduler is not None:
                         self.scheduler.step()
-                    
+
                     # for each minibatch
                     for ii, (X, Y) in enumerate(data[phase]):
                         if use_gpu:
@@ -93,27 +93,26 @@ class DeepNetTrainer:
                         for name, fun in self.compute_metric.items():
                             metric = fun(Ypred, Y)
                             epo_metrics[name] += metric
-                    
-                    #end minibatch
+
+                    # end minibatch
                     eloss = float(epo_loss / epo_samp)
                     self.metrics[phase]['losses'].append(eloss)
-                    
+
                     for name, fun in self.compute_metric.items():
                         metric = float(epo_metrics[name] / epo_samp)
                         self.metrics[phase][name].append(metric)
-                
+
                 # end phase
                 if valid_data is None:
                     self.metrics['valid']['losses'].append(None)
                     for name, fun in self.compute_metric.items():
                         self.metrics['valid'][name].append(None)
-                        
+
                 is_best = ''
                 if eloss < best_loss:
                     is_best = 'best'
                     best_loss = eloss
                     best_epoch = i
-                    best_model = copy.deepcopy(self.model)
                     if self.basename is not None:
                         self.save_trainer_state(self.basename, self.model, self.optimizer, self.metrics)
 
@@ -122,8 +121,8 @@ class DeepNetTrainer:
                 for cb in self.callbacks:
                     cb.on_epoch_end(self, i, best_epoch, t0)
 
-                #t0 = time.time()
-                
+                # t0 = time.time()
+
         except KeyboardInterrupt:
             print('Interrupted!!')
 
@@ -145,20 +144,20 @@ class DeepNetTrainer:
         elif has_valid:
             # validation and no metrics
             print('{:3d}: {:5.1f}s   T: {:.5f}   V: {:.5f} {}'
-                  .format(i, etime, 
+                  .format(i, etime,
                           self.metrics['train']['losses'][-1],
                           self.metrics['valid']['losses'][-1], is_best))
         elif not has_valid and has_metrics:
             # no validation and metrics
             mtrc = list(self.compute_metric.keys())[0]
             print('{:3d}: {:5.1f}s   T: {:.5f} {:.5f} {}'
-                  .format(i, etime, 
+                  .format(i, etime,
                           self.metrics['train']['losses'][-1],
                           self.metrics['train'][mtrc][-1], is_best))
         else:
             # no validation and no metrics
             print('{:3d}: {:5.1f}s   T: {:.5f} {}'
-                  .format(i, etime, 
+                  .format(i, etime,
                           self.metrics['train']['losses'][-1], is_best))
 
     def predict(self, data_loader, use_gpu='auto'):
@@ -175,7 +174,7 @@ class DeepNetTrainer:
                     image = Variable(image)
                 outputs = self.model.forward(image)
                 predictions.append(outputs.data.cpu())
-                print('\rpredict: {}/{}'.format(ii,ii_n-1), end='')
+                print('\rpredict: {}/{}'.format(ii, ii_n - 1), end='')
             print(' ok')
         except KeyboardInterrupt:
             print(' interrupted!')
@@ -193,7 +192,7 @@ class DeepNetTrainer:
             else:
                 metric_dict = metrics
             epo_metrics = {}
-            for name in metric_dict.keys(): #zero all metrics
+            for name in metric_dict.keys():  # zero all metrics
                 epo_metrics[name] = 0
             self.model.train(False)  # Set model to evaluate mode
             ii_n = len(data_loader)
@@ -207,7 +206,7 @@ class DeepNetTrainer:
                     vmetric = fun(Ypred, Y)
                     epo_metrics[name] += vmetric
                 n_batches += 1
-                print('\revaluate: {}/{}'.format(ii,ii_n-1), end='')
+                print('\revaluate: {}/{}'.format(ii, ii_n - 1), end='')
             print(' ok')
         except KeyboardInterrupt:
             print(' interrupted!')
@@ -224,7 +223,7 @@ class DeepNetTrainer:
         #     optimizer.load_state_dict(torch.load(file_basename + '.optim'))
         if os.path.isfile(file_basename + '.histo'):
             metrics.update(pickle.load(open(file_basename + '.histo', 'rb')))
-    
+
     @staticmethod
     def save_trainer_state(file_basename, model, optimizer, metrics):
         torch.save(model.state_dict(), file_basename + '.model')
@@ -241,7 +240,7 @@ def test_network(model, dataset, criterion, batch_size=32, use_gpu='auto'):
 
     if use_gpu == 'auto':
         use_gpu = torch.cuda.is_available()
-    assert use_gpu == False or use_gpu == True
+    assert not use_gpu or use_gpu
 
     loss_sum = 0.0
     hit_sum = 0.0
@@ -260,10 +259,10 @@ def test_network(model, dataset, criterion, batch_size=32, use_gpu='auto'):
 
         outputs = torch.nn.functional.softmax(outputs)
         probs, preds = torch.max(outputs, 1)
-        curr_img_index = i*temp_dataloader.batch_size
-        all_preds[curr_img_index:curr_img_index+labels.size(0)] = preds.data.cpu().numpy()
-        all_probs[curr_img_index:curr_img_index+labels.size(0)] = probs.data.cpu().numpy()
-        hit_sum += torch.sum(preds.data==labels.data)
+        curr_img_index = i * temp_dataloader.batch_size
+        all_preds[curr_img_index:curr_img_index + labels.size(0)] = preds.data.cpu().numpy()
+        all_probs[curr_img_index:curr_img_index + labels.size(0)] = probs.data.cpu().numpy()
+        hit_sum += torch.sum(preds.data == labels.data)
 
     loss = loss_sum.data.cpu()[0] / len(temp_dataloader)
     accuracy = hit_sum / len(dataset)
