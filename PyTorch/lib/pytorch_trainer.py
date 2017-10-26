@@ -223,15 +223,37 @@ class DeepNetTrainer(object):
     def save_state(self, file_basename):
         save_trainer_state(file_basename, self.model, self.metrics)
 
+    def predict_loader(self, data_loader):
+        predictions = []
+        for X,_ in data_loader:
+            if self.use_gpu:
+                X = Variable(X.cuda())
+            else:
+                X = Variable(X)
+
+            Ypred = self.model.forward(X)
+            predictions.append(Ypred.cpu())
+        return torch.cat(predictions, 0)
+        
     def predict(self, Xin):
         if self.use_gpu:
             Xin = Xin.cuda()
         return predict(self.model, Xin)
 
+    def predict_classes_loader(self, data_loader):
+        y_pred = self.predict_loader(data_loader)
+        _, pred = torch.max(y_pred, 1)
+        return pred
+
     def predict_classes(self, Xin):
         if self.use_gpu:
             Xin = Xin.cuda()
         return predict_classes(self.model, Xin)
+
+    def predict_probas_loader(self, data_loader):
+        y_pred = self.predict_loader(data_loader)
+        probas = F.softmax(y_pred)
+        return probas
 
     def predict_probas(self, Xin):
         if self.use_gpu:
