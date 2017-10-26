@@ -42,13 +42,13 @@ class DeepNetTrainer(object):
     def fit(self, n_epochs, Xin, Yin, valid_data=None, valid_split=None, batch_size=10, shuffle=True):
         if valid_data is not None:
             train_loader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=shuffle)
-            valid_loader = DataLoader(TensorDataset(*valid_data), batch_size=batch_size, shuffle=shuffle)
+            valid_loader = DataLoader(TensorDataset(*valid_data), batch_size=batch_size, shuffle=False)
         elif valid_split is not None:
             iv = int(valid_split * Xin.shape[0])
             Xval, Yval = Xin[:iv], Yin[:iv]
             Xtra, Ytra = Xin[iv:], Yin[iv:]
             train_loader = DataLoader(TensorDataset(Xtra, Ytra), batch_size=batch_size, shuffle=shuffle)
-            valid_loader = DataLoader(TensorDataset(Xval, Yval), batch_size=batch_size, shuffle=shuffle)
+            valid_loader = DataLoader(TensorDataset(Xval, Yval), batch_size=batch_size, shuffle=False)
         else:
             train_loader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=shuffle)
             valid_loader = None
