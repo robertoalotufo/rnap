@@ -54,10 +54,6 @@ class DeepNetTrainer(object):
             valid_loader = None
         self.fit_loader(n_epochs, train_loader, valid_data=valid_loader)
 
-    def score(self, Xin, Yin, batch_size=10):
-        dloader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=False)
-        return self.score_loader(dloader)
-
     def evaluate(self, Xin, Yin, metrics=None, batch_size=10):
         dloader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=False)
         return self.evaluate_loader(dloader, metrics)
@@ -170,28 +166,6 @@ class DeepNetTrainer(object):
         for cb in self.callbacks:
             cb.on_train_end(n_epochs, self.metrics)
 
-    def score_loader(self, data_loader):
-        epo_samples = 0
-        epo_loss = 0
-        self.model.train(False)
-        for curr_batch, (X, Y) in enumerate(data_loader):
-            mb_size = X.size(0)
-            epo_samples += mb_size
-            if self.use_gpu:
-                X, Y = Variable(X.cuda()), Variable(Y.cuda())
-            else:
-                X, Y = Variable(X), Variable(Y)
-            Ypred = self.model.forward(X)
-            loss = self.criterion(Ypred, Y)
-            vloss = loss.data.cpu()[0]
-            if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
-                epo_loss += vloss * mb_size
-            else:
-                epo_loss += vloss
-        epo_loss /= epo_samples
-        # higher score is better
-        return -epo_loss
-
     def evaluate_loader(self, data_loader, metrics=None):
         metrics = metrics or []
         my_metrics = dict(train=dict(losses=[]), valid=dict(losses=[]))
@@ -249,15 +223,37 @@ class DeepNetTrainer(object):
     def save_state(self, file_basename):
         save_trainer_state(file_basename, self.model, self.metrics)
 
+    def predict_loader(self, data_loader):
+        predictions = []
+        for X,_ in data_loader:
+            if self.use_gpu:
+                X = Variable(X.cuda())
+            else:
+                X = Variable(X)
+
+            Ypred = self.model.forward(X)
+            predictions.append(Ypred.cpu())
+        return torch.cat(predictions, 0)
+        
     def predict(self, Xin):
         if self.use_gpu:
             Xin = Xin.cuda()
         return predict(self.model, Xin)
 
+    def predict_classes_loader(self, data_loader):
+        y_pred = self.predict_loader(data_loader)
+        _, pred = torch.max(y_pred, 1)
+        return pred
+
     def predict_classes(self, Xin):
         if self.use_gpu:
             Xin = Xin.cuda()
         return predict_classes(self.model, Xin)
+
+    def predict_probas_loader(self, data_loader):
+        y_pred = self.predict_loader(data_loader)
+        probas = F.softmax(y_pred)
+        return probas
 
     def predict_probas(self, Xin):
         if self.use_gpu:
