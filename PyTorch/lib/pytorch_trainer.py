@@ -42,13 +42,13 @@ class DeepNetTrainer(object):
     def fit(self, n_epochs, Xin, Yin, valid_data=None, valid_split=None, batch_size=10, shuffle=True):
         if valid_data is not None:
             train_loader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=shuffle)
-            valid_loader = DataLoader(TensorDataset(*valid_data), batch_size=batch_size, shuffle=False)
+            valid_loader = DataLoader(TensorDataset(*valid_data), batch_size=batch_size, shuffle=shuffle)
         elif valid_split is not None:
             iv = int(valid_split * Xin.shape[0])
             Xval, Yval = Xin[:iv], Yin[:iv]
             Xtra, Ytra = Xin[iv:], Yin[iv:]
             train_loader = DataLoader(TensorDataset(Xtra, Ytra), batch_size=batch_size, shuffle=shuffle)
-            valid_loader = DataLoader(TensorDataset(Xval, Yval), batch_size=batch_size, shuffle=False)
+            valid_loader = DataLoader(TensorDataset(Xval, Yval), batch_size=batch_size, shuffle=shuffle)
         else:
             train_loader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=shuffle)
             valid_loader = None
@@ -218,10 +218,18 @@ class DeepNetTrainer(object):
         return dict([(k, v[0]) for k, v in my_metrics['train'].items()])
 
     def load_state(self, file_basename):
+        if self.use_gpu:
+            self.model.cpu()
         load_trainer_state(file_basename, self.model, self.metrics)
+        if self.use_gpu:
+            self.model.cuda()
 
     def save_state(self, file_basename):
-        save_trainer_state(file_basename, self.model, self.metrics)
+        if self.use_gpu:
+            cpu_model = copy.deepcopy(self.model).cpu()
+        else:
+            cpu_model = self.model
+        save_trainer_state(file_basename, cpu_model, self.metrics)
 
     def predict_loader(self, data_loader):
         predictions = []
@@ -265,7 +273,7 @@ class DeepNetTrainer(object):
 
 
 def load_trainer_state(file_basename, model, metrics):
-    model.load_state_dict(torch.load(file_basename + '.model'))
+    model.load_state_dict(torch.load(file_basename + '.model', map_location=lambda storage, loc: storage ))
     if os.path.isfile(file_basename + '.histo'):
         metrics.update(pickle.load(open(file_basename + '.histo', 'rb')))
 
