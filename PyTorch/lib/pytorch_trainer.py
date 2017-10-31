@@ -58,6 +58,21 @@ class DeepNetTrainer(object):
         dloader = DataLoader(TensorDataset(Xin, Yin), batch_size=batch_size, shuffle=False)
         return self.evaluate_loader(dloader, metrics)
 
+    def _do_optimize(self, X, Y):
+        self.model.train(True)
+        self.optimizer.zero_grad()
+        Ypred = self.model.forward(X)
+        loss = self.criterion(Ypred, Y)
+        loss.backward()
+        self.optimizer.step()
+        return Ypred, loss
+
+    def _do_evaluate(self, X, Y):
+        self.model.train(False)
+        Ypred = self.model.forward(X)
+        loss = self.criterion(Ypred, Y)
+        return Ypred, loss
+
     def fit_loader(self, n_epochs, train_data, valid_data=None):
         self.has_validation = valid_data is not None
         try:
@@ -76,7 +91,6 @@ class DeepNetTrainer(object):
                 epo_batches = 0
                 epo_loss = 0
 
-                self.model.train(True)
                 if self.scheduler is not None:
                     self.scheduler.step()
 
@@ -95,12 +109,7 @@ class DeepNetTrainer(object):
                     else:
                         X, Y = Variable(X), Variable(Y)
 
-                    self.optimizer.zero_grad()
-
-                    Ypred = self.model.forward(X)
-                    loss = self.criterion(Ypred, Y)
-                    loss.backward()
-                    self.optimizer.step()
+                    Ypred, loss = self._do_optimize(X, Y)
 
                     vloss = loss.data.cpu()[0]
                     if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
@@ -122,8 +131,6 @@ class DeepNetTrainer(object):
                     epo_batches = 0
                     epo_loss = 0
 
-                    self.model.train(False)
-
                     # for each minibatch
                     for curr_batch, (X, Y) in enumerate(valid_data):
                         mb_size = X.size(0)
@@ -138,8 +145,7 @@ class DeepNetTrainer(object):
                         else:
                             X, Y = Variable(X), Variable(Y)
 
-                        Ypred = self.model.forward(X)
-                        loss = self.criterion(Ypred, Y)
+                        Ypred, loss = self._do_evaluate(X, Y)
 
                         vloss = loss.data.cpu()[0]
                         if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
@@ -178,7 +184,6 @@ class DeepNetTrainer(object):
         epo_loss = 0
 
         try:
-            self.model.train(False)
             ii_n = len(data_loader)
 
             for curr_batch, (X, Y) in enumerate(data_loader):
@@ -191,8 +196,7 @@ class DeepNetTrainer(object):
                 else:
                     X, Y = Variable(X), Variable(Y)
 
-                Ypred = self.model.forward(X)
-                loss = self.criterion(Ypred, Y)
+                Ypred, loss = self._do_evaluate(X, Y)
 
                 vloss = loss.data.cpu()[0]
                 if hasattr(self.criterion, 'size_average') and self.criterion.size_average:
@@ -233,7 +237,7 @@ class DeepNetTrainer(object):
 
     def predict_loader(self, data_loader):
         predictions = []
-        for X,_ in data_loader:
+        for X, _ in data_loader:
             if self.use_gpu:
                 X = Variable(X.cuda())
             else:
@@ -242,7 +246,7 @@ class DeepNetTrainer(object):
             Ypred = self.model.forward(X)
             predictions.append(Ypred.cpu())
         return torch.cat(predictions, 0)
-        
+
     def predict(self, Xin):
         if self.use_gpu:
             Xin = Xin.cuda()
@@ -273,7 +277,7 @@ class DeepNetTrainer(object):
 
 
 def load_trainer_state(file_basename, model, metrics):
-    model.load_state_dict(torch.load(file_basename + '.model', map_location=lambda storage, loc: storage ))
+    model.load_state_dict(torch.load(file_basename + '.model', map_location=lambda storage, loc: storage))
     if os.path.isfile(file_basename + '.histo'):
         metrics.update(pickle.load(open(file_basename + '.histo', 'rb')))
 
