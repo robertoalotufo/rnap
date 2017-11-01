@@ -230,7 +230,8 @@ class DeepNetTrainer(object):
 
     def save_state(self, file_basename):
         if self.use_gpu:
-            cpu_model = copy.deepcopy(self.model).cpu()
+            cpu_model = copy.deepcopy(self.model)
+            cpu_model.cpu()
         else:
             cpu_model = self.model
         save_trainer_state(file_basename, cpu_model, self.metrics)
