@@ -226,6 +226,7 @@ class DeepNetTrainer(object):
         if self.use_gpu:
             self.model.cpu()
         load_trainer_state(file_basename, self.model, self.metrics)
+        self.last_epoch = len(self.metrics['train']['losses'])
         if self.use_gpu:
             self.model.cuda()
 
@@ -524,3 +525,26 @@ class PlotCallback(Callback):
 
         display.display(self.fig)
         time.sleep(0.1)
+
+
+def plot_losses(htrain, hvalid):
+    fig = plt.figure(figsize=(15, 6))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.grid(True)
+
+    epoch = len(htrain)
+    x = np.arange(1, epoch + 1)
+
+    best_epoch = int(np.argmin(htrain)) + 1
+    best_loss = htrain[best_epoch - 1]
+    ax.plot(x, htrain, color='#1f77b4', linewidth=2, label='training loss')
+    ax.scatter(best_epoch, best_loss, c='#1f77b4', marker='o')
+
+    if hvalid[0] is not None:
+        best_epoch = int(np.argmin(hvalid)) + 1
+        best_loss = hvalid[best_epoch - 1]
+        ax.plot(x, hvalid, color='#ff7f0e', linewidth=2, label='validation loss')
+        ax.scatter(best_epoch, best_loss, c='#ff7f0e', marker='o')
+
+    ax.legend()
+    ax.set_title('Best epoch: {}, Current epoch: {}'.format(best_epoch, epoch))
