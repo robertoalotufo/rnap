@@ -239,6 +239,7 @@ class DeepNetTrainer(object):
         save_trainer_state(file_basename, cpu_model, self.metrics)
 
     def predict_loader(self, data_loader):
+        self.model.train()
         predictions = []
         for X, _ in data_loader:
             if self.use_gpu:
@@ -246,8 +247,9 @@ class DeepNetTrainer(object):
             else:
                 X = Variable(X)
 
-            Ypred = self.model.forward(X)
-            predictions.append(Ypred.cpu())
+            Ypred = self.model(X)
+            Ypred = Ypred.cpu().data
+            predictions.append(Ypred)
         return torch.cat(predictions, 0)
 
     def predict(self, Xin):
