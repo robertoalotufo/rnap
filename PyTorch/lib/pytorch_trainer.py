@@ -59,7 +59,6 @@ class DeepNetTrainer(object):
         return self.evaluate_loader(dloader, metrics)
 
     def _do_optimize(self, X, Y):
-        self.model.train(True)
         self.optimizer.zero_grad()
         Ypred = self.model.forward(X)
         loss = self.criterion(Ypred, Y)
@@ -68,7 +67,6 @@ class DeepNetTrainer(object):
         return Ypred, loss
 
     def _do_evaluate(self, X, Y):
-        self.model.train(False)
         Ypred = self.model.forward(X)
         loss = self.criterion(Ypred, Y)
         return Ypred, loss
@@ -84,6 +82,7 @@ class DeepNetTrainer(object):
 
                 # training phase
                 # ==============
+                self.model.train(True)
                 for cb in self.callbacks:
                     cb.on_epoch_begin(curr_epoch, self.metrics)
 
@@ -118,7 +117,7 @@ class DeepNetTrainer(object):
                         epo_loss += vloss
 
                     for cb in self.callbacks:
-                        cb.on_batch_end(curr_epoch, curr_batch, Ypred, Y, loss)
+                        cb.on_batch_end(curr_epoch, curr_batch, X, Y, Ypred, loss)
 
                 # end of training minibatches
                 eloss = float(epo_loss / epo_samples)
@@ -126,6 +125,7 @@ class DeepNetTrainer(object):
 
                 # validation phase
                 # ================
+                self.model.train(False)
                 if self.has_validation:
                     epo_samples = 0
                     epo_batches = 0
@@ -141,9 +141,9 @@ class DeepNetTrainer(object):
                             cb.on_vbatch_begin(curr_epoch, curr_batch, mb_size)
 
                         if self.use_gpu:
-                            X, Y = Variable(X.cuda()), Variable(Y.cuda())
+                            X, Y = Variable(X.cuda(), volatile=True), Variable(Y.cuda(), volatile=True)
                         else:
-                            X, Y = Variable(X), Variable(Y)
+                            X, Y = Variable(X, volatile=True), Variable(Y, volatile=True)
 
                         Ypred, loss = self._do_evaluate(X, Y)
 
@@ -154,7 +154,7 @@ class DeepNetTrainer(object):
                             epo_loss += vloss
 
                         for cb in self.callbacks:
-                            cb.on_vbatch_end(curr_epoch, curr_batch, Ypred, Y, loss)
+                            cb.on_vbatch_end(curr_epoch, curr_batch, X, Y, Ypred, loss)
 
                     # end minibatches
                     eloss = float(epo_loss / epo_samples)
@@ -184,6 +184,7 @@ class DeepNetTrainer(object):
         epo_loss = 0
 
         try:
+            self.model.train(False)
             ii_n = len(data_loader)
 
             for curr_batch, (X, Y) in enumerate(data_loader):
@@ -225,6 +226,7 @@ class DeepNetTrainer(object):
         if self.use_gpu:
             self.model.cpu()
         load_trainer_state(file_basename, self.model, self.metrics)
+        self.last_epoch = len(self.metrics['train']['losses'])
         if self.use_gpu:
             self.model.cuda()
 
@@ -324,13 +326,13 @@ class Callback(object):
     def on_batch_begin(self, epoch, batch, mb_size):
         pass
 
-    def on_batch_end(self, epoch, batch, y_pred, y_true, loss):
+    def on_batch_end(self, epoch, batch, x, y, y_pred, loss):
         pass
 
     def on_vbatch_begin(self, epoch, batch, mb_size):
         pass
 
-    def on_vbatch_end(self, epoch, batch, y_pred, y_true, loss):
+    def on_vbatch_end(self, epoch, batch, x, y, y_pred, loss):
         pass
 
 
@@ -339,13 +341,13 @@ class AccuracyMetric(Callback):
         super().__init__()
         self.name = 'acc'
 
-    def on_batch_end(self, epoch_num, batch_num, y_pred, y_true, loss):
+    def on_batch_end(self, epoch_num, batch_num, x, y_true, y_pred, loss):
         _, preds = torch.max(y_pred.data, 1)
         ok = (preds == y_true.data).sum()
         self.train_accum += ok
         self.n_train_samples += y_pred.size(0)
 
-    def on_vbatch_end(self, epoch_num, batch_num, y_pred, y_true, loss):
+    def on_vbatch_end(self, epoch_num, batch_num, x, y_true, y_pred, loss):
         _, preds = torch.max(y_pred.data, 1)
         ok = (preds == y_true.data).sum()
         self.valid_accum += ok
@@ -523,3 +525,26 @@ class PlotCallback(Callback):
 
         display.display(self.fig)
         time.sleep(0.1)
+
+
+def plot_losses(htrain, hvalid):
+    fig = plt.figure(figsize=(15, 6))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.grid(True)
+
+    epoch = len(htrain)
+    x = np.arange(1, epoch + 1)
+
+    best_epoch = int(np.argmin(htrain)) + 1
+    best_loss = htrain[best_epoch - 1]
+    ax.plot(x, htrain, color='#1f77b4', linewidth=2, label='training loss')
+    ax.scatter(best_epoch, best_loss, c='#1f77b4', marker='o')
+
+    if hvalid[0] is not None:
+        best_epoch = int(np.argmin(hvalid)) + 1
+        best_loss = hvalid[best_epoch - 1]
+        ax.plot(x, hvalid, color='#ff7f0e', linewidth=2, label='validation loss')
+        ax.scatter(best_epoch, best_loss, c='#ff7f0e', marker='o')
+
+    ax.legend()
+    ax.set_title('Best epoch: {}, Current epoch: {}'.format(best_epoch, epoch))
