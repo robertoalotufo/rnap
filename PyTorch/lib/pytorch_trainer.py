@@ -206,8 +206,8 @@ class DeepNetTrainer(object):
                     epo_loss += vloss
 
                 for cb in metrics:
-                    cb.on_batch_end(1, curr_batch, Ypred, Y, loss)
-
+                    cb.on_batch_end(1, curr_batch, X, Y, Ypred, loss) # RAL
+                             
                 print('\revaluate: {}/{}'.format(curr_batch, ii_n - 1), end='')
             print(' ok')
 
