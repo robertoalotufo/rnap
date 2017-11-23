@@ -239,7 +239,7 @@ class DeepNetTrainer(object):
         save_trainer_state(file_basename, cpu_model, self.metrics)
 
     def predict_loader(self, data_loader):
-        self.model.train()
+        self.model.train(False)  # Set model to evaluate mode
         predictions = []
         for X, _ in data_loader:
             if self.use_gpu:
@@ -255,7 +255,7 @@ class DeepNetTrainer(object):
     def predict(self, Xin):
         if self.use_gpu:
             Xin = Xin.cuda()
-        return predict(self.model, Xin)
+        return predict(self.model, Xin, self.use_gpu)
 
     def predict_classes_loader(self, data_loader):
         y_pred = self.predict_loader(data_loader)
@@ -292,19 +292,27 @@ def save_trainer_state(file_basename, model, metrics):
     pickle.dump(metrics, open(file_basename + '.histo', 'wb'))
 
 
-def predict(model, Xin):
-    y_pred = model.forward(Variable(Xin))
+def predict(model, Xin, use_gpu='auto'):
+    self.model.train(False)  # Set model to evaluate mode
+    if use_gpu == 'auto':
+        use_gpu = torch.cuda.is_available()
+    if use_gpu:
+        model = model.cuda()
+        Xin = Variable(Xin.cuda())
+    else:
+        Xin = Variable(Xin)
+    y_pred = model.forward(Xin)
     return y_pred.data
 
 
-def predict_classes(model, Xin):
-    y_pred = predict(model, Xin)
+def predict_classes(model, Xin, use_gpu='auto'):
+    y_pred = predict(model, Xin, use_gpu)
     _, pred = torch.max(y_pred, 1)
     return pred
 
 
-def predict_probas(model, Xin):
-    y_pred = predict(model, Xin)
+def predict_probas(model, Xin, use_gpu='auto'):
+    y_pred = predict(model, Xin, use_gpu)
     probas = F.softmax(y_pred)
     return probas
 
