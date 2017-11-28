@@ -193,9 +193,9 @@ class DeepNetTrainer(object):
                 epo_batches += 1
 
                 if self.use_gpu:
-                    X, Y = Variable(X.cuda()), Variable(Y.cuda())
+                    X, Y = Variable(X.cuda(),volatile=True), Variable(Y.cuda())
                 else:
-                    X, Y = Variable(X), Variable(Y)
+                    X, Y = Variable(X,volatile=True), Variable(Y)
 
                 Ypred, loss = self._do_evaluate(X, Y)
 
@@ -243,9 +243,9 @@ class DeepNetTrainer(object):
         predictions = []
         for X, _ in data_loader:
             if self.use_gpu:
-                X = Variable(X.cuda())
+                X = Variable(X.cuda(),volatile=True)
             else:
-                X = Variable(X)
+                X = Variable(X,volatile=True)
 
             Ypred = self.model(X)
             Ypred = Ypred.cpu().data
@@ -298,9 +298,9 @@ def predict(model, Xin, use_gpu='auto'):
         use_gpu = torch.cuda.is_available()
     if use_gpu:
         model = model.cuda()
-        Xin = Variable(Xin.cuda())
+        Xin = Variable(Xin.cuda(),volatile=True)
     else:
-        Xin = Variable(Xin)
+        Xin = Variable(Xin,volatile=True)
     y_pred = model.forward(Xin)
     return y_pred.data
 
