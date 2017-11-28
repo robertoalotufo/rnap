@@ -293,7 +293,7 @@ def save_trainer_state(file_basename, model, metrics):
 
 
 def predict(model, Xin, use_gpu='auto'):
-    self.model.train(False)  # Set model to evaluate mode
+    model.train(False)  # Set model to evaluate mode
     if use_gpu == 'auto':
         use_gpu = torch.cuda.is_available()
     if use_gpu:
