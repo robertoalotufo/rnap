@@ -269,8 +269,8 @@ class DeepNetTrainer(object):
 
     def predict_probas_loader(self, data_loader):
         y_pred = self.predict_loader(data_loader)
-        probas = F.softmax(y_pred)
-        return probas
+        probas = F.softmax(y_pred) # converts to Variable
+        return probas.data
 
     def predict_probas(self, Xin):
         if self.use_gpu:
@@ -313,8 +313,8 @@ def predict_classes(model, Xin, use_gpu='auto'):
 
 def predict_probas(model, Xin, use_gpu='auto'):
     y_pred = predict(model, Xin, use_gpu)
-    probas = F.softmax(y_pred)
-    return probas
+    probas = F.softmax(y_pred)   # converts to Variable internally
+    return probas.data         
 
 
 class Callback(object):
