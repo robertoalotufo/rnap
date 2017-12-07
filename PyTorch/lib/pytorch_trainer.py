@@ -207,7 +207,7 @@ class DeepNetTrainer(object):
 
                 for cb in metrics:
                     cb.on_batch_end(1, curr_batch, X, Y, Ypred, loss) # RAL
-                             
+
                 print('\revaluate: {}/{}'.format(curr_batch, ii_n - 1), end='')
             print(' ok')
 
@@ -314,7 +314,7 @@ def predict_classes(model, Xin, use_gpu='auto'):
 def predict_probas(model, Xin, use_gpu='auto'):
     y_pred = predict(model, Xin, use_gpu)
     probas = F.softmax(y_pred)   # converts to Variable internally
-    return probas.data         
+    return probas.data
 
 
 class Callback(object):
@@ -417,7 +417,8 @@ class ModelCheckpoint(Callback):
             self.best_epoch = epoch
             self.best_model = copy.deepcopy(self.trainer.model)
             if self.basename is not None:
-                save_trainer_state(self.basename, self.trainer.model, self.trainer.metrics)
+                # save_trainer_state(self.basename, self.trainer.model, self.trainer.metrics)
+                self.trainer.save_state(self.basename)
                 if self.verbose > 1:
                     print('Model saved to', self.basename + '.model')
 
