@@ -269,7 +269,7 @@ class DeepNetTrainer(object):
 
     def predict_probas_loader(self, data_loader):
         y_pred = self.predict_loader(data_loader)
-        probas = F.softmax(y_pred) # converts to Variable
+        probas = F.softmax(Variable(y_pred), dim=1) # converts to Variable
         return probas.data
 
     def predict_probas(self, Xin):
@@ -313,7 +313,7 @@ def predict_classes(model, Xin, use_gpu='auto'):
 
 def predict_probas(model, Xin, use_gpu='auto'):
     y_pred = predict(model, Xin, use_gpu)
-    probas = F.softmax(y_pred)   # converts to Variable internally
+    probas = F.softmax(y_pred, dim=1)   # converts to Variable internally
     return probas.data
 
 
