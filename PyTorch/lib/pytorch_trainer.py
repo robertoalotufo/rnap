@@ -239,18 +239,7 @@ class DeepNetTrainer(object):
         save_trainer_state(file_basename, cpu_model, self.metrics)
 
     def predict_loader(self, data_loader):
-        self.model.train(False)  # Set model to evaluate mode
-        predictions = []
-        for X, _ in data_loader:
-            if self.use_gpu:
-                X = Variable(X.cuda(),volatile=True)
-            else:
-                X = Variable(X,volatile=True)
-
-            Ypred = self.model(X)
-            Ypred = Ypred.cpu().data
-            predictions.append(Ypred)
-        return torch.cat(predictions, 0)
+        return predict_loader(self.model, data_loader, self.use_gpu)
 
     def predict(self, Xin):
         if self.use_gpu:
@@ -258,9 +247,7 @@ class DeepNetTrainer(object):
         return predict(self.model, Xin, self.use_gpu)
 
     def predict_classes_loader(self, data_loader):
-        y_pred = self.predict_loader(data_loader)
-        _, pred = torch.max(y_pred, 1)
-        return pred
+        return predict_classes_loader(self.model, data_loader, self.use_gpu)
 
     def predict_classes(self, Xin):
         if self.use_gpu:
@@ -268,9 +255,7 @@ class DeepNetTrainer(object):
         return predict_classes(self.model, Xin)
 
     def predict_probas_loader(self, data_loader):
-        y_pred = self.predict_loader(data_loader)
-        probas = F.softmax(Variable(y_pred), dim=1) # converts to Variable
-        return probas.data
+        return predict_probas_loader(self.model, data_loader, self.use_gpu)
 
     def predict_probas(self, Xin):
         if self.use_gpu:
@@ -301,19 +286,40 @@ def predict(model, Xin, use_gpu='auto'):
         Xin = Variable(Xin.cuda(),volatile=True)
     else:
         Xin = Variable(Xin,volatile=True)
-    y_pred = model.forward(Xin)
+    y_pred = model(Xin)
     return y_pred.data
 
+def predict_loader(model, data_loader, use_gpu='auto'):
+    model.train(False)  # Set model to evaluate mode
+    predictions = []
+    for X, _ in data_loader:
+        if use_gpu:
+            X = Variable(X.cuda(),volatile=True)
+        else:
+            X = Variable(X,volatile=True)
+        Ypred = model(X)
+        Ypred = Ypred.cpu().data
+        predictions.append(Ypred)
+    return torch.cat(predictions, 0)
 
 def predict_classes(model, Xin, use_gpu='auto'):
     y_pred = predict(model, Xin, use_gpu)
     _, pred = torch.max(y_pred, 1)
     return pred
 
+def predict_classes_loader(model, data_loader, use_gpu='auto'):
+    y_pred = predict_loader(model, data_loader, use_gpu)
+    _, pred = torch.max(y_pred, dim=1)
+    return pred
 
 def predict_probas(model, Xin, use_gpu='auto'):
     y_pred = predict(model, Xin, use_gpu)
-    probas = F.softmax(y_pred, dim=1)   # converts to Variable internally
+    probas = F.softmax(Variable(y_pred), dim=1)   # converts to Variable
+    return probas.data
+
+def predict_probas_loader(model, data_loader, use_gpu='auto'):
+    y_pred = predict_loader(model, data_loader, use_gpu)
+    probas = F.softmax(Variable(y_pred), dim=1) # converts to Variable
     return probas.data
 
 
