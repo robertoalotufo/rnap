@@ -294,6 +294,8 @@ def predict(model, Xin, use_gpu='auto'):
 
 def predict_loader(model, data_loader, use_gpu='auto'):
     model.train(False)  # Set model to evaluate mode
+    if use_gpu == 'auto':
+        use_gpu = torch.cuda.is_available()
     predictions = []
     for X, _ in data_loader:
         if use_gpu:
@@ -306,21 +308,29 @@ def predict_loader(model, data_loader, use_gpu='auto'):
     return torch.cat(predictions, 0)
 
 def predict_classes(model, Xin, use_gpu='auto'):
+    if use_gpu == 'auto':
+        use_gpu = torch.cuda.is_available()
     y_pred = predict(model, Xin, use_gpu)
     _, pred = torch.max(y_pred, 1)
     return pred
 
 def predict_classes_loader(model, data_loader, use_gpu='auto'):
+    if use_gpu == 'auto':
+        use_gpu = torch.cuda.is_available()
     y_pred = predict_loader(model, data_loader, use_gpu)
     _, pred = torch.max(y_pred, dim=1)
     return pred
 
 def predict_probas(model, Xin, use_gpu='auto'):
+    if use_gpu == 'auto':
+        use_gpu = torch.cuda.is_available()
     y_pred = predict(model, Xin, use_gpu)
     probas = F.softmax(Variable(y_pred), dim=1)   # converts to Variable
     return probas.data
 
 def predict_probas_loader(model, data_loader, use_gpu='auto'):
+    if use_gpu == 'auto':
+        use_gpu = torch.cuda.is_available()
     y_pred = predict_loader(model, data_loader, use_gpu)
     probas = F.softmax(Variable(y_pred), dim=1) # converts to Variable
     return probas.data
