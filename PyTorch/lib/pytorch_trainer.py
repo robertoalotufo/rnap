@@ -172,7 +172,7 @@ class DeepNetTrainer(object):
         for cb in self.callbacks:
             cb.on_train_end(n_epochs, self.metrics)
 
-    def evaluate_loader(self, data_loader, metrics=None):
+    def evaluate_loader(self, data_loader, metrics=None, verbose=1):
         metrics = metrics or []
         my_metrics = dict(train=dict(losses=[]), valid=dict(losses=[]))
         for cb in metrics:
@@ -193,9 +193,9 @@ class DeepNetTrainer(object):
                 epo_batches += 1
 
                 if self.use_gpu:
-                    X, Y = Variable(X.cuda(),volatile=True), Variable(Y.cuda())
+                    X, Y = Variable(X.cuda(), volatile=True), Variable(Y.cuda())
                 else:
-                    X, Y = Variable(X,volatile=True), Variable(Y)
+                    X, Y = Variable(X, volatile=True), Variable(Y)
 
                 Ypred, loss = self._do_evaluate(X, Y)
 
@@ -206,10 +206,13 @@ class DeepNetTrainer(object):
                     epo_loss += vloss
 
                 for cb in metrics:
-                    cb.on_batch_end(1, curr_batch, X, Y, Ypred, loss) # RAL
+                    cb.on_batch_end(1, curr_batch, X, Y, Ypred, loss)   # RAL
 
-                print('\revaluate: {}/{}'.format(curr_batch, ii_n - 1), end='')
-            print(' ok')
+                if verbose > 0:
+                    print('\revaluate: {}/{}'.format(curr_batch, ii_n - 1), end='')
+
+            if verbose > 0:
+                print(' ok')
 
         except KeyboardInterrupt:
             print(' interrupted!')
