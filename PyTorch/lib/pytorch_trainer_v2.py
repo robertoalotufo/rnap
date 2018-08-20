@@ -5,7 +5,6 @@ import time
 import pickle
 import numpy as np
 import torch
-from torch.autograd import Variable
 from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
