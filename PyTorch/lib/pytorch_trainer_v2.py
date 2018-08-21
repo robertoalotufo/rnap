@@ -360,13 +360,13 @@ class AccuracyMetric(Callback):
     def on_batch_end(self, epoch_num, batch_num, x, y_true, y_pred, loss):
         _, preds = torch.max(y_pred.data, 1)
         ok = (preds == y_true.data).sum()
-        self.train_accum += ok
+        self.train_accum += ok.item()
         self.n_train_samples += y_pred.size(0)
 
     def on_vbatch_end(self, epoch_num, batch_num, x, y_true, y_pred, loss):
         _, preds = torch.max(y_pred.data, 1)
         ok = (preds == y_true.data).sum()
-        self.valid_accum += ok
+        self.valid_accum += ok.item()
         self.n_valid_samples += y_pred.size(0)
 
     def on_epoch_begin(self, epoch_num, metrics):
