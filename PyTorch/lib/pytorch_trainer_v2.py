@@ -74,6 +74,7 @@ class DeepNetTrainer(object):
     def fit_loader(self, n_epochs, train_data, valid_data=None):
         device = torch.device(self.dev_name)
         self.has_validation = valid_data is not None
+        self.n_batches = len(train_data.dataset)//train_data.batch_size # added RAL 25ago18
         try:
             for cb in self.callbacks:
                 cb.on_train_begin(n_epochs, self.metrics)
@@ -283,7 +284,7 @@ class DeepNetTrainer(object):
 
     def predict_probas_loader(self, data_loader):
         y_pred = self.predict_loader(data_loader)
-        probas = F.softmax(y_pred)
+        probas = F.softmax(y_pred, dim=1)
         return probas
 
     def predict_probas(self, Xin):
@@ -319,7 +320,7 @@ def predict_classes(model, Xin):
 
 def predict_probas(model, Xin):
     y_pred = predict(model, Xin)
-    probas = F.softmax(y_pred)
+    probas = F.softmax(y_pred,dim=1)
     return probas
 
 
@@ -472,6 +473,11 @@ class PrintCallback(Callback):
                         else:
                             print(' ', end='  ')
             print()
+            
+    def on_batch_end(self, epoch, batch, x, y, y_pred, loss):
+        # print each batch, overwriting on the same line,  RAL 25ago2018
+        print('Batch end epoch {} batch {} of {}'.format(epoch,batch,self.trainer.n_batches),end='\r')
+        pass
 
 
 class PlotCallback(Callback):
