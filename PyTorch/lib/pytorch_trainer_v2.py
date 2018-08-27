@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os
+import os, sys
 import copy
 import time
 import pickle
@@ -477,6 +477,7 @@ class PrintCallback(Callback):
     def on_batch_end(self, epoch, batch, x, y, y_pred, loss):
         # print each batch, overwriting on the same line,  RAL 25ago2018
         print('Batch end epoch {} batch {} of {}'.format(epoch,batch,self.trainer.n_batches),end='\r')
+        sys.stdout.flush()
         pass
 
 
