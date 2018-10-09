@@ -307,10 +307,23 @@ def save_trainer_state(file_basename, model, metrics):
     pickle.dump(metrics, open(file_basename + '.histo', 'wb'))
 
 
+def predict_loader(model, data_loader):
+    predictions = []
+    with torch.no_grad():
+        for X, _ in data_loader:
+            Ypred = model.forward(X)
+            Ypred = Ypred.cpu().data
+            predictions.append(Ypred)
+    return torch.cat(predictions, 0)
+
 def predict(model, Xin):
     y_pred = model.forward(Xin)
     return y_pred.data
 
+def predict_classes_loader(model, data_loader):
+    y_pred = predict_loader(model, data_loader)
+    _, pred = torch.max(y_pred, 1)
+    return pred
 
 def predict_classes(model, Xin):
     y_pred = predict(model, Xin)
