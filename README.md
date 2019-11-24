@@ -1,2 +1,3 @@
 # rnap Redes Neurais e Aprendizado Profundo de Máquina
-Área para preparação do Curso de Redes Neurais e Aprendizado Profundo de Máquina
+
+Curso básico de redes neurais profundas utilizando PyTorch
